@@ -109,15 +109,28 @@ Alle 42 Akzeptanzkriterien-Tests laufen grün durch.
 
 ## 🐳 Docker & Produktion
 
-Für den Produktivbetrieb stehen vorgefertigte Compose-Dateien bereit:
+Die Produktionsarchitektur ist **Cloudflare Tunnel → Nginx → Gunicorn/Django**.
+Nginx liefert CSS und JavaScript aus. Bei hochgeladenen Bildern prüft Django
+zuerst die Berechtigung; Nginx überträgt anschließend die Datei.
 
 ```bash
-# Mit Docker Compose starten (inkl. Postgres 16, Redis, Celery und Cloudflare Tunnel):
-docker compose -f docker-compose.prod.yml up -d --build
+# .env aus der Vorlage erstellen und Produktionswerte eintragen:
+cp .env.example .env
+
+# Erstdeployment: Image bauen, Migrationen, collectstatic und HTTP-Prüfung:
+bash scripts/deploy.sh
 ```
 
+**Cloudflare-Konfiguration:** Die Service-URL des bestehenden Tunnels muss auf
+`http://nginx:80` zeigen (bisher `http://web:8000`). Diese Änderung erfolgt im
+Cloudflare-Dashboard; die Compose-Datei kann sie bei einem tokenbasierten Tunnel
+nicht automatisch setzen.
+
 ### Wartung & Updates
-- Updates mit einem Befehl: `./update.sh`
+- Updates mit einem Befehl: `bash update.sh`
+- Es gibt ein Wartungsfenster während Migrationen und Containerwechsel.
+- Ein `docker compose restart` übernimmt keinen neuen Anwendungscode.
+- Ausführliche Deployment- und Diagnoseanleitung: [DEPLOYMENT.md](DEPLOYMENT.md).
 - Datenbank-Backup: `./scripts/backup.sh`
 - Backup wiederherstellen: `./scripts/restore.sh backups/<backup-datei>.sql.gz`
 - Ausführliche Anleitung für den Vorstand: siehe [ADMIN_HANDBUCH.md](ADMIN_HANDBUCH.md).

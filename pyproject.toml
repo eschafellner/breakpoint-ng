@@ -18,6 +18,7 @@ dependencies = [
     "celery>=5.3",
     "redis>=5.0",
     "cryptography>=42.0",
+    "gunicorn>=23.0,<24.0",
 ]
 
 [project.optional-dependencies]
@@ -32,3 +33,6 @@ dev = [
 DJANGO_SETTINGS_MODULE = "config.settings.dev"
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+include = ["apps*", "config*"]

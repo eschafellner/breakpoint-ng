@@ -13,13 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
-COPY pyproject.toml /app/
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir ".[dev]" gunicorn
-
 # Copy application source code
 COPY . /app/
+
+# Install the project only after its packages and README are present.
+RUN pip install --no-cache-dir .
 
 # Create directories for media, staticfiles, and logs
 RUN mkdir -p /app/staticfiles /app/media /app/logs

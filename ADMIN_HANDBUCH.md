@@ -223,19 +223,25 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 
 Die Plattform läuft vollautomatisch in Docker-Containern.
 
-### 9.1 Updates einspielen mit `./update.sh`
+### 9.1 Updates einspielen mit `bash update.sh`
 Wenn eine neue Version verfügbar ist, genügt ein einziger Befehl im Terminal des Servers:
 
 ```bash
-./update.sh
+bash update.sh
 ```
 
 **Was dieses Skript automatisch erledigt:**
 1. Es lädt den neuesten Quellcode herunter.
-2. Es baut die Container bei Bedarf neu.
-3. Es führt alle Datenbank-Migrationen sicher aus.
-4. Es aktualisiert die Web-Dateien (CSS/Bilder).
-5. Die Webseite bleibt ohne Ausfallzeit erreichbar.
+2. Es baut das neue Anwendungsimage und prüft die Konfiguration.
+3. Es stoppt die Anwendungsdienste für ein Wartungsfenster.
+4. Es führt Datenbank-Migrationen aus und sammelt versionierte CSS-/JavaScript-Dateien.
+5. Es startet Django und Nginx und prüft die tatsächliche HTTP-Auslieferung.
+6. Erst nach erfolgreicher Prüfung startet es die Hintergrunddienste und den Tunnel.
+
+Während des Wartungsfensters ist die Webseite kurzzeitig nicht erreichbar.
+Vor einem Update müssen Datenbank und das Docker-Volume `media_prod_volume`
+gesichert werden. Bei einem Fehler bricht das Skript ab; ein fehlgeschlagenes
+Update wird nicht als erfolgreich gemeldet. Details: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### 9.2 Backups erstellen und wiederherstellen
 
@@ -253,6 +259,8 @@ Stellt die Datenbank und alle hochgeladenen Bilder 1:1 wieder her.
 
 ### 9.3 Cloudflare Tunnel & Sicherheit
 - Die Vereins-Webseite ist über einen verschlüsselten Cloudflare Tunnel angebunden.
+- Das Tunnelziel muss im Cloudflare-Dashboard auf `http://nginx:80` eingestellt sein.
+- Nginx liefert die Web-Dateien aus; Django prüft vor der Bildauslieferung die Zugriffsrechte.
 - Es müssen **keine offenen Ports** am Router oder Vereinsheim-Internet freigeschaltet werden.
 - HTTPS-Zertifikate, Schutz vor DDoS-Angriffen und SSL-Verschlüsselung übernimmt Cloudflare automatisch.
 - Bei 5 falschen Passwort-Eingaben innerhalb von 15 Minuten wird ein Benutzerkonto automatisch temporär gesperrt.
