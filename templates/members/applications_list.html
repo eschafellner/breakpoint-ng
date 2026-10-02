@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Vorstand & Administration</span>
+        <h2>Offene Mitgliedsanträge</h2>
+      </div>
+      <a href="{% url 'members:csv_import' %}" class="btn sm court">+ CSV-Import</a>
+    </div>
+
+    <div class="card">
+      {% if applications %}
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Antragsteller</th>
+              <th>E-Mail / Tel</th>
+              <th>Gewünschte Art</th>
+              <th>IBAN</th>
+              <th>Aktionen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for app in applications %}
+              <tr>
+                <td>{{ app.created_at|date:"d.m.Y H:i" }}</td>
+                <td><b>{{ app.user.get_full_name }}</b></td>
+                <td>{{ app.user.email }}<br><small>{{ app.user.phone|default:"Kein Tel." }}</small></td>
+                <td><span class="badge green">{{ app.requested_type.name }}</span></td>
+                <td><code>{{ app.sepa_iban|default:"–" }}</code></td>
+                <td>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <!-- Approve form -->
+                    <form method="post" action="{% url 'members:approve_application' app.id %}">
+                      {% csrf_token %}
+                      <button type="submit" class="btn sm" style="background:var(--ok);border-color:var(--ok);padding:4px 10px;">
+                        ✓ Freischalten
+                      </button>
+                    </form>
+
+                    <!-- Reject dialog toggle / form -->
+                    <details style="display:inline-block;">
+                      <summary class="btn sm ghost" style="color:var(--err);border-color:var(--err);padding:4px 8px;cursor:pointer;">
+                        ✕ Ablehnen
+                      </summary>
+                      <div style="position:absolute;z-index:20;background:#fff;border:1px solid var(--border);padding:14px;border-radius:var(--radius);box-shadow:0 4px 12px rgba(0,0,0,.15);width:280px;margin-top:4px;">
+                        <form method="post" action="{% url 'members:reject_application' app.id %}">
+                          {% csrf_token %}
+                          <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px;">Begründung:</label>
+                          <textarea name="rejection_reason" required rows="3" class="input" style="font-size:.85rem;margin-bottom:8px;" placeholder="Grund für die Ablehnung..."></textarea>
+                          <button type="submit" class="btn sm" style="background:var(--err);border-color:var(--err);width:100%;">Ablehnen bestätigen</button>
+                        </form>
+                      </div>
+                    </details>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding:32px;text-align:center;color:var(--muted);">
+          Zurzeit liegen keine offenen Mitgliedsanträge vor.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

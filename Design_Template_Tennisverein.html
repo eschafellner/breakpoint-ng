@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TC Musterdorf – Design Template</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   DESIGN TOKENS  (1:1 nach Tailwind-Config / CSS übertragbar)
+   ========================================================= */
+:root{
+  --clay:#B94E33;        /* Sandplatz – Primärfarbe */
+  --clay-dark:#8E3A25;
+  --clay-soft:#F3DDD3;
+  --court:#1E3B2F;       /* Dunkelgrün – Navigation, Flächen */
+  --court-2:#2B5141;
+  --chalk:#FBF8F3;       /* Hintergrund */
+  --line:#FFFFFF;        /* Platzlinien */
+  --ink:#1B1F1D;
+  --muted:#5E6762;
+  --border:#E4DED4;
+  --ball:#D7E64A;        /* Akzent sparsam: Hervorhebungen */
+  --ok:#2E7D4F; --warn:#B7791F; --err:#B42318;
+  --radius:6px;
+  --font-display:"Barlow Condensed",system-ui,sans-serif;
+  --font-body:"Inter",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+body{margin:0;font-family:var(--font-body);color:var(--ink);background:var(--chalk);line-height:1.55;font-size:16px}
+h1,h2,h3{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.02em;line-height:1.05;margin:0 0 .5rem}
+h1{font-size:clamp(2.4rem,6vw,4.2rem)} h2{font-size:2rem} h3{font-size:1.35rem}
+a{color:var(--clay-dark)}
+:focus-visible{outline:3px solid var(--ball);outline-offset:2px;border-radius:3px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.skip{position:absolute;left:-999px;top:8px;background:var(--ball);color:var(--ink);padding:8px 12px;z-index:99}
+.skip:focus{left:8px}
+
+/* ---------- Header / Navigation ---------- */
+header{background:var(--court);color:#fff;position:sticky;top:0;z-index:20;border-bottom:3px solid var(--line)}
+.nav{display:flex;align-items:center;gap:24px;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-size:1.4rem;font-weight:700;text-transform:uppercase;color:#fff;text-decoration:none}
+.logo svg{flex:none}
+.menu{display:flex;gap:4px;margin-left:auto}
+.menu button{background:none;border:0;color:#DCE7E1;font:600 .95rem var(--font-body);padding:10px 12px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-3px}
+.menu button:hover{color:#fff}
+.menu button[aria-current="page"]{color:#fff;border-color:var(--ball)}
+.user{display:flex;align-items:center;gap:8px;font-size:.9rem;color:#DCE7E1}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--clay);display:grid;place-items:center;color:#fff;font-weight:600;font-size:.8rem}
+.burger{display:none;margin-left:auto;background:none;border:1px solid #ffffff55;color:#fff;border-radius:var(--radius);padding:6px 10px;font-size:1rem}
+@media(max-width:860px){
+  .burger{display:block}.user{display:none}
+  .menu{display:none;position:absolute;top:67px;left:0;right:0;background:var(--court);flex-direction:column;padding:8px 20px 16px}
+  .menu.open{display:flex}
+  .menu button{text-align:left;border-bottom:0;border-left:3px solid transparent}
+  .menu button[aria-current="page"]{border-left-color:var(--ball)}
+}
+
+/* ---------- Buttons, Badges, Cards ---------- */
+.btn{display:inline-flex;align-items:center;gap:8px;font:600 .95rem var(--font-body);padding:11px 18px;border-radius:var(--radius);border:2px solid var(--clay);background:var(--clay);color:#fff;cursor:pointer;text-decoration:none}
+.btn:hover{background:var(--clay-dark);border-color:var(--clay-dark)}
+.btn.ghost{background:transparent;color:inherit;border-color:currentColor}
+.btn.ghost:hover{background:#ffffff14}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.badge{display:inline-block;font:600 .72rem var(--font-body);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:3px;background:var(--clay-soft);color:var(--clay-dark)}
+.badge.green{background:#DDEBE3;color:var(--court)}
+.badge.ok{background:#DCF0E3;color:var(--ok)} .badge.warn{background:#FBEFD5;color:var(--warn)} .badge.err{background:#FBE1DE;color:var(--err)}
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.section{padding:56px 0}
+.section-head{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.eyebrow{font:600 .78rem var(--font-body);text-transform:uppercase;letter-spacing:.12em;color:var(--clay)}
+
+/* Signature: Platzlinien als Gestaltungselement */
+.court-lines{position:relative;background:var(--clay);color:#fff;overflow:hidden}
+.court-lines::before{content:"";position:absolute;inset:24px;border:3px solid #ffffffcc;pointer-events:none}
+.court-lines::after{content:"";position:absolute;top:24px;bottom:24px;left:62%;border-left:3px solid #ffffffcc;pointer-events:none}
+.court-lines .service{position:absolute;left:62%;right:24px;top:50%;border-top:3px solid #ffffffcc}
+@media(max-width:700px){.court-lines::after,.court-lines .service{display:none}}
+
+/* ---------- Views ---------- */
+.view{display:none}.view.active{display:block}
+
+/* Hero */
+.hero{padding:96px 0 88px}
+.hero .wrap{position:relative;z-index:1}
+.hero p{max-width:520px;font-size:1.1rem;color:#FFF3EE}
+.hero .actions{display:flex;gap:12px;margin-top:28px;flex-wrap:wrap}
+.hero-score{position:absolute;right:20px;top:-20px;background:var(--court);border:3px solid #fff;padding:18px 22px;font-family:var(--font-display);min-width:250px}
+.hero-score small{display:block;font:600 .7rem var(--font-body);letter-spacing:.12em;text-transform:uppercase;color:var(--ball);margin-bottom:8px}
+.hero-score .row{display:flex;justify-content:space-between;font-size:1.3rem;gap:20px}
+.hero-score .row b{font-variant-numeric:tabular-nums;letter-spacing:.2em}
+@media(max-width:860px){.hero-score{position:static;margin-top:32px;display:inline-block}}
+
+/* News */
+.news-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:20px}
+.news-grid .card:first-child{grid-row:span 2}
+.news-img{aspect-ratio:16/10;background:var(--court-2);position:relative}
+.news-img svg{width:100%;height:100%;display:block}
+.card .body{padding:18px 20px 22px}
+.card .meta{font-size:.82rem;color:var(--muted);margin-bottom:6px}
+.card p{margin:.4rem 0 0;color:var(--muted)}
+.card h3 a{color:var(--ink);text-decoration:none}.card h3 a:hover{color:var(--clay)}
+@media(max-width:860px){.news-grid{grid-template-columns:1fr}.news-grid .card:first-child{grid-row:auto}}
+
+/* Kennzahlen */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:3px solid var(--court);border-bottom:1px solid var(--border)}
+.stat{padding:22px 16px;border-right:1px solid var(--border)}
+.stat:last-child{border-right:0}
+.stat b{display:block;font:700 2.4rem var(--font-display);color:var(--court)}
+.stat span{font-size:.88rem;color:var(--muted)}
+@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}}
+
+/* Buchung */
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.daypicker{display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#fff}
+.daypicker button{border:0;background:none;padding:9px 14px;cursor:pointer;font:500 .9rem var(--font-body);border-right:1px solid var(--border)}
+.daypicker button:last-child{border-right:0}
+.daypicker button[aria-pressed="true"]{background:var(--court);color:#fff}
+.legend{display:flex;gap:14px;font-size:.84rem;color:var(--muted);margin-left:auto;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+.booking-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+@media(max-width:960px){.booking-layout{grid-template-columns:1fr}}
+.grid-scroll{overflow-x:auto;background:#fff;border:1px solid var(--border);border-radius:var(--radius)}
+table.slots{border-collapse:collapse;width:100%;min-width:620px}
+.slots th,.slots td{border-bottom:1px solid var(--border);padding:4px;text-align:center}
+.slots thead th{font:600 .9rem var(--font-display);text-transform:uppercase;letter-spacing:.04em;padding:12px 6px;background:#F6F2EB}
+.slots thead th small{display:block;font:400 .72rem var(--font-body);text-transform:none;color:var(--muted);letter-spacing:0}
+.slots tbody th{font:500 .85rem var(--font-body);color:var(--muted);width:70px;font-variant-numeric:tabular-nums}
+.slot{width:100%;min-height:42px;border-radius:4px;border:1px dashed #CFC6B8;background:#fff;cursor:pointer;font:500 .78rem var(--font-body);color:var(--muted)}
+.slot:hover{border-style:solid;border-color:var(--clay);color:var(--clay)}
+.slot.taken{background:#E9E4DC;border:0;cursor:not-allowed;color:#7B7368}
+.slot.blocked{background:repeating-linear-gradient(45deg,#E6ECE8,#E6ECE8 6px,#D7E0DA 6px,#D7E0DA 12px);border:0;cursor:not-allowed;color:var(--court)}
+.slot.mine{background:var(--court);color:#fff;border:0}
+.slot.selected{background:var(--clay);color:#fff;border:0}
+.summary{padding:20px;position:sticky;top:84px}
+.summary dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:12px 0;font-size:.92rem}
+.summary dt{color:var(--muted)} .summary dd{margin:0;text-align:right;font-weight:500}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;font-size:.88rem;font-weight:500}
+.field select,.field input{font:inherit;font-weight:400;padding:9px 10px;border:1px solid #CFC6B8;border-radius:var(--radius);background:#fff}
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--ink);padding-top:12px;margin-top:8px}
+.total b{font:700 1.8rem var(--font-display)}
+.hint{font-size:.8rem;color:var(--muted);margin:.5rem 0 1rem}
+.empty{color:var(--muted);font-size:.92rem;padding:16px 0}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--court);color:#fff;padding:12px 18px;border-radius:var(--radius);border-left:5px solid var(--ball);transition:transform .25s;z-index:50}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+/* Turnier-Bracket */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto}
+.tabs button{background:none;border:0;padding:10px 14px;font:600 .92rem var(--font-body);color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--clay)}
+.bracket{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:28px;overflow-x:auto;padding-bottom:12px}
+.round h4{font:600 .8rem var(--font-body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.round .matches{display:flex;flex-direction:column;justify-content:space-around;height:calc(100% - 30px);gap:14px}
+.match{background:#fff;border:1px solid var(--border);border-left:4px solid var(--court);border-radius:4px;font-size:.88rem}
+.match .p{display:flex;justify-content:space-between;padding:7px 10px;gap:10px}
+.match .p+.p{border-top:1px solid var(--border)}
+.match .p.win{font-weight:600}
+.match .p.win::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ball);border:1px solid #9AA52A;align-self:center;margin-right:-4px;order:-1}
+.match .s{font-variant-numeric:tabular-nums;color:var(--muted);letter-spacing:.08em}
+.match .p.win .s{color:var(--ink)}
+.match.open{border-left-color:var(--clay)}
+.match .seed{color:var(--clay);font-size:.75rem;margin-right:4px}
+.champion{background:var(--court);color:#fff;padding:18px;border-radius:4px;border:3px solid #fff;outline:1px solid var(--court)}
+.champion small{color:var(--ball);font-weight:600;letter-spacing:.1em;text-transform:uppercase;font-size:.72rem}
+.champion b{display:block;font:700 1.5rem var(--font-display);text-transform:uppercase;margin-top:4px}
+
+/* Mitgliederbereich */
+.member-grid{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}
+@media(max-width:860px){.member-grid{grid-template-columns:1fr}}
+.profile{padding:22px}
+.profile .avatar{width:64px;height:64px;font-size:1.3rem;margin-bottom:12px}
+.memcard{margin-top:16px;padding:16px;border-radius:var(--radius)}
+.memcard small{opacity:.8;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase}
+.memcard b{display:block;font:700 1.6rem var(--font-display);letter-spacing:.08em}
+table.data{width:100%;border-collapse:collapse;font-size:.92rem}
+.data th{text-align:left;font:600 .75rem var(--font-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:12px 16px;border-bottom:2px solid var(--ink)}
+.data td{padding:12px 16px;border-bottom:1px solid var(--border)}
+.data td.num{text-align:right;font-variant-numeric:tabular-nums}
+.data tr:hover td{background:#FBF8F3}
+.panel-head{padding:18px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap}
+.panel-head h3{margin:0}
+.searchbox{padding:8px 12px;border:1px solid #CFC6B8;border-radius:var(--radius);font:inherit;min-width:200px}
+
+/* Footer */
+footer{background:var(--court);color:#C9D6CF;padding:40px 0;margin-top:40px;font-size:.9rem}
+footer .cols{display:grid;grid-template-columns:2fr 1fr 1fr;gap:24px}
+footer a{color:#fff}
+footer h4{font:600 .78rem var(--font-body);letter-spacing:.12em;text-transform:uppercase;color:var(--ball);margin:0 0 10px}
+@media(max-width:700px){footer .cols{grid-template-columns:1fr}}
+
+/* Styleguide */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.sw{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#fff;font-size:.82rem}
+.sw div{height:64px}.sw p{margin:0;padding:8px 10px}.sw code{color:var(--muted)}
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Zum Inhalt springen</a>
+
+<header>
+  <div class="wrap nav">
+    <a href="#" class="logo" data-go="start" aria-label="TC Musterdorf Startseite">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="#D7E64A" stroke="#fff" stroke-width="2"/><path d="M4 11c7 3 7 9 0 12M30 11c-7 3-7 9 0 12" fill="none" stroke="#fff" stroke-width="2"/></svg>
+      TC Musterdorf
+    </a>
+    <button class="burger" aria-expanded="false" aria-controls="menu" aria-label="Menü öffnen">☰</button>
+    <nav id="menu" class="menu" aria-label="Hauptnavigation">
+      <button data-go="start" aria-current="page">Start</button>
+      <button data-go="booking">Platzbuchung</button>
+      <button data-go="tournament">Turniere</button>
+      <button data-go="members">Mitgliederbereich</button>
+      <button data-go="styleguide">Styleguide</button>
+    </nav>
+    <div class="user"><span class="avatar" aria-hidden="true">ES</span>Edgar S.</div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ================= START ================= -->
+<section class="view active" id="view-start" aria-label="Startseite">
+  <div class="court-lines hero">
+    <span class="service" aria-hidden="true"></span>
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--ball)">Saison 2027 · Sandplätze geöffnet</span>
+      <h1>Spiel, Satz<br>und Verein.</h1>
+      <p>Platz buchen, bei der Ortsmeisterschaft antreten oder einfach Mitglied werden – alles an einem Ort.</p>
+      <div class="actions">
+        <button class="btn" style="background:var(--court);border-color:var(--court)" data-go="booking">Platz buchen</button>
+        <a class="btn ghost" href="#">Mitglied werden</a>
+      </div>
+      <div class="hero-score" aria-label="Letztes Finale: Huber gewinnt gegen Maier 6:4, 7:5">
+        <small>Ortsmeisterschaft · Finale</small>
+        <div class="row"><span>Huber ●</span><b>6 7</b></div>
+        <div class="row" style="opacity:.7"><span>Maier</span><b>4 5</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="stats" role="list">
+      <div class="stat" role="listitem"><b>186</b><span>Mitglieder</span></div>
+      <div class="stat" role="listitem"><b>4</b><span>Sandplätze + 1 Halle</span></div>
+      <div class="stat" role="listitem"><b>3</b><span>freie Plätze heute ab 17 Uhr</span></div>
+      <div class="stat" role="listitem"><b>12.06.</b><span>Anmeldeschluss Ortsmeisterschaft</span></div>
+    </div>
+  </div>
+
+  <div class="section wrap">
+    <div class="section-head">
+      <div><span class="eyebrow">Aus dem Verein</span><h2>Neuigkeiten</h2></div>
+      <a href="#">Alle News →</a>
+    </div>
+    <div class="news-grid">
+      <article class="card">
+        <div class="news-img"><svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Sandplatz von oben"><rect width="160" height="100" fill="#B94E33"/><g fill="none" stroke="#fff" stroke-width="1.5"><rect x="15" y="12" width="130" height="76"/><line x1="80" y1="12" x2="80" y2="88"/><line x1="15" y1="22" x2="145" y2="22"/><line x1="15" y1="78" x2="145" y2="78"/><line x1="45" y1="22" x2="45" y2="78"/><line x1="115" y1="22" x2="115" y2="78"/><line x1="45" y1="50" x2="115" y2="50"/></g><circle cx="98" cy="38" r="3" fill="#D7E64A"/></svg></div>
+        <div class="body">
+          <div class="meta"><span class="badge">Verein</span> · 28. September 2026</div>
+          <h3><a href="#">Saisonabschluss: Danke an alle Helferinnen und Helfer</a></h3>
+          <p>Mit über 80 Gästen, Mixed-Turnier und Grillabend ging die Freiluftsaison zu Ende. Die Hallensaison startet am 15. Oktober – Buchungen sind ab sofort möglich.</p>
+        </div>
+      </article>
+      <article class="card">
+        <div class="news-img"><svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Pokal"><rect width="160" height="100" fill="#1E3B2F"/><path d="M65 25h30v18a15 15 0 0 1-30 0z" fill="#D7E64A"/><rect x="76" y="58" width="8" height="12" fill="#D7E64A"/><rect x="66" y="70" width="28" height="6" fill="#fff"/></svg></div>
+        <div class="body"><div class="meta"><span class="badge green">Turniere</span> · 21. Sep.</div><h3><a href="#">Ortsmeister 2026 gekürt</a></h3></div>
+      </article>
+      <article class="card">
+        <div class="news-img"><svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Tennisbälle"><rect width="160" height="100" fill="#2B5141"/><circle cx="60" cy="55" r="16" fill="#D7E64A"/><circle cx="100" cy="48" r="16" fill="#D7E64A"/></svg></div>
+        <div class="body"><div class="meta"><span class="badge">Jugend</span> · 14. Sep.</div><h3><a href="#">Schnuppertraining für Kinder</a></h3></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUCHUNG ================= -->
+<section class="view section" id="view-booking" aria-labelledby="h-booking">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="eyebrow">Platzbuchung</span><h2 id="h-booking">Platz reservieren</h2></div>
+    </div>
+    <div class="toolbar">
+      <div class="daypicker" role="group" aria-label="Tag wählen" id="days"></div>
+      <div class="legend" aria-hidden="true">
+        <span><i style="border:1px dashed #CFC6B8;background:#fff"></i>Frei</span>
+        <span><i style="background:#E9E4DC"></i>Belegt</span>
+        <span><i style="background:repeating-linear-gradient(45deg,#E6ECE8,#E6ECE8 3px,#D7E0DA 3px,#D7E0DA 6px)"></i>Gesperrt</span>
+        <span><i style="background:var(--court)"></i>Meine Buchung</span>
+      </div>
+    </div>
+    <div class="booking-layout">
+      <div class="grid-scroll"><table class="slots" id="slots"><caption class="sr-only">Belegungsplan der Plätze</caption></table></div>
+      <aside class="card summary" aria-live="polite">
+        <h3>Ihre Buchung</h3>
+        <div id="sum-empty" class="empty">Wählen Sie einen freien Zeitraum im Plan.</div>
+        <div id="sum-full" hidden>
+          <dl><dt>Platz</dt><dd id="s-court"></dd><dt>Datum</dt><dd id="s-day"></dd><dt>Zeit</dt><dd id="s-time"></dd></dl>
+          <label class="field">Mitspieler
+            <select id="partner">
+              <option value="member">Mitglied – Anna Leitner</option>
+              <option value="member2">Mitglied – Thomas Gruber</option>
+              <option value="guest">Gast (ohne Konto)</option>
+            </select>
+          </label>
+          <label class="field" id="guestname-wrap" hidden>Name des Gastes<input id="guestname" placeholder="Vor- und Nachname"></label>
+          <label class="field" style="flex-direction:row;align-items:center;gap:8px;font-weight:400"><input type="checkbox" id="light"> Flutlicht (+ 4,00 €)</label>
+          <div class="total"><span>Gesamt</span><b id="s-total">0,00 €</b></div>
+          <p class="hint" id="s-hint">Für Mitglieder kostenlos. Stornierung bis 6 Std. vorher kostenfrei.</p>
+          <button class="btn" style="width:100%;justify-content:center" id="confirm">Verbindlich buchen</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TURNIER ================= -->
+<section class="view section" id="view-tournament" aria-labelledby="h-tour">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="eyebrow">Ortsmeisterschaft 2027 · 14.–22. Juni</span><h2 id="h-tour">Turniere</h2></div>
+      <div style="display:flex;gap:10px;align-items:center"><span class="badge ok">Anmeldung offen</span><button class="btn">Jetzt anmelden</button></div>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Konkurrenzen">
+      <button role="tab" aria-selected="true">Herren Einzel</button>
+      <button role="tab" aria-selected="false">Damen Einzel</button>
+      <button role="tab" aria-selected="false">Mixed</button>
+      <button role="tab" aria-selected="false">Herren 45+</button>
+      <button role="tab" aria-selected="false">Ehrentafel</button>
+    </div>
+    <div class="bracket" aria-label="Turnierbaum Herren Einzel">
+      <div class="round"><h4>Viertelfinale</h4><div class="matches">
+        <div class="match"><div class="p win"><span><span class="seed">[1]</span>J. Huber</span><span class="s">6 6</span></div><div class="p"><span>K. Wolf</span><span class="s">2 3</span></div></div>
+        <div class="match"><div class="p"><span>M. Berger</span><span class="s">4 6 8</span></div><div class="p win"><span>S. Pichler</span><span class="s">6 3 10</span></div></div>
+        <div class="match"><div class="p win"><span>L. Moser</span><span class="s">7 6</span></div><div class="p"><span>F. Steiner (Gast)</span><span class="s">5 4</span></div></div>
+        <div class="match"><div class="p"><span>A. Hofer</span><span class="s">w.o.</span></div><div class="p win"><span><span class="seed">[2]</span>P. Maier</span><span class="s">–</span></div></div>
+      </div></div>
+      <div class="round"><h4>Halbfinale</h4><div class="matches">
+        <div class="match"><div class="p win"><span><span class="seed">[1]</span>J. Huber</span><span class="s">6 6</span></div><div class="p"><span>S. Pichler</span><span class="s">3 4</span></div></div>
+        <div class="match"><div class="p"><span>L. Moser</span><span class="s">3 6 4</span></div><div class="p win"><span><span class="seed">[2]</span>P. Maier</span><span class="s">6 2 6</span></div></div>
+      </div></div>
+      <div class="round"><h4>Finale · Sa 22.06. 14:00 · Platz 1</h4><div class="matches">
+        <div class="match open"><div class="p"><span><span class="seed">[1]</span>J. Huber</span><span class="s">–</span></div><div class="p"><span><span class="seed">[2]</span>P. Maier</span><span class="s">–</span></div></div>
+      </div></div>
+      <div class="round"><h4>Ortsmeister</h4><div class="matches">
+        <div class="champion"><small>Titelverteidiger 2026</small><b>Johannes Huber</b><span style="font-size:.85rem;opacity:.8">3. Titel in Folge</span></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MITGLIEDER ================= -->
+<section class="view section" id="view-members" aria-labelledby="h-mem">
+  <div class="wrap">
+    <div class="section-head"><div><span class="eyebrow">Nur für Mitglieder</span><h2 id="h-mem">Mitgliederbereich</h2></div></div>
+    <div class="member-grid">
+      <aside class="card profile">
+        <div class="avatar">ES</div>
+        <h3>Edgar Schafellner</h3>
+        <div style="color:var(--muted);font-size:.9rem">Mitglied seit 2019</div>
+        <div class="memcard court-lines" style="background:var(--court)">
+          <small>Mitgliedsnummer</small><b>TC-0142</b>
+          <span class="badge" style="background:var(--ball);color:var(--ink)">Erwachsener · jährlich</span>
+        </div>
+        <div style="margin-top:16px;display:grid;gap:8px">
+          <button class="btn ghost" style="justify-content:center">Profil bearbeiten</button>
+          <button class="btn ghost" style="justify-content:center">Meine Buchungen (2)</button>
+        </div>
+      </aside>
+      <div style="display:grid;gap:20px">
+        <div class="card">
+          <div class="panel-head"><h3>Beiträge &amp; Gebühren</h3><span class="badge warn">1 offen</span></div>
+          <div style="overflow-x:auto"><table class="data">
+            <thead><tr><th>Zeitraum</th><th>Art</th><th>Status</th><th style="text-align:right">Betrag</th></tr></thead>
+            <tbody>
+              <tr><td>2027</td><td>Mitgliedsbeitrag</td><td><span class="badge warn">Offen · fällig 31.03.</span></td><td class="num">180,00 €</td></tr>
+              <tr><td>12.09.2026</td><td>Gastgebühr (M. Novak)</td><td><span class="badge ok">Bezahlt</span></td><td class="num">8,00 €</td></tr>
+              <tr><td>2026</td><td>Mitgliedsbeitrag</td><td><span class="badge ok">Bezahlt</span></td><td class="num">180,00 €</td></tr>
+              <tr><td>2025</td><td>Mitgliedsbeitrag</td><td><span class="badge ok">Bezahlt</span></td><td class="num">170,00 €</td></tr>
+            </tbody>
+          </table></div>
+          <p class="hint" style="padding:0 20px">Zahlung per Überweisung an AT12 3456 7890 1234 5678, Verwendungszweck: TC-0142 2027 – oder bar beim Kassier.</p>
+        </div>
+        <div class="card">
+          <div class="panel-head"><h3>Mitgliederliste</h3><label><span class="sr-only">Mitglieder suchen</span><input class="searchbox" id="msearch" type="search" placeholder="Name suchen …"></label></div>
+          <div style="overflow-x:auto"><table class="data">
+            <thead><tr><th>Name</th><th>Telefon</th><th>E-Mail</th></tr></thead>
+            <tbody id="mlist"></tbody>
+          </table></div>
+          <p class="empty" id="mempty" style="padding:16px 20px" hidden>Keine Mitglieder gefunden.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= STYLEGUIDE ================= -->
+<section class="view section" id="view-styleguide" aria-labelledby="h-sg">
+  <div class="wrap">
+    <span class="eyebrow">Für Entwickler &amp; KI-Agenten</span><h2 id="h-sg">Styleguide</h2>
+    <p style="max-width:680px;color:var(--muted)">Leitidee: <strong>Platzlinien</strong>. Weiße Linien auf Sand und Dunkelgrün gliedern Flächen; Ergebnisse erscheinen im Anzeigetafel-Stil. Ballgelb nur als Akzent (Fokus, Sieger, aktive Navigation).</p>
+    <h3 style="margin-top:28px">Farben</h3>
+    <div class="swatches">
+      <div class="sw"><div style="background:var(--clay)"></div><p>Sand <code>#B94E33</code></p></div>
+      <div class="sw"><div style="background:var(--court)"></div><p>Platzgrün <code>#1E3B2F</code></p></div>
+      <div class="sw"><div style="background:var(--chalk)"></div><p>Kreide <code>#FBF8F3</code></p></div>
+      <div class="sw"><div style="background:var(--ball)"></div><p>Ballgelb <code>#D7E64A</code></p></div>
+      <div class="sw"><div style="background:var(--ink)"></div><p>Text <code>#1B1F1D</code></p></div>
+      <div class="sw"><div style="background:var(--clay-soft)"></div><p>Sand hell <code>#F3DDD3</code></p></div>
+    </div>
+    <h3 style="margin-top:28px">Typografie</h3>
+    <p><span style="font:700 2.4rem var(--font-display);text-transform:uppercase">Barlow Condensed</span><br><span style="color:var(--muted)">Überschriften, Zahlen, Ergebnisse – immer Versalien</span></p>
+    <p><span style="font-size:1.2rem">Inter – Fließtext, Formulare, Tabellen</span></p>
+    <h3 style="margin-top:28px">Komponenten</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn">Primär</button><button class="btn ghost">Sekundär</button><button class="btn" disabled>Deaktiviert</button>
+      <span class="badge">Kategorie</span><span class="badge ok">Bezahlt</span><span class="badge warn">Offen</span><span class="badge err">Überfällig</span>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap cols">
+    <div><div class="logo" style="margin-bottom:8px">TC Musterdorf</div>Sportplatzweg 3 · 1234 Musterdorf<br>info@tc-musterdorf.at</div>
+    <div><h4>Verein</h4><a href="#">Satzung</a><br><a href="#">Vorstand</a><br><a href="#">Mitglied werden</a></div>
+    <div><h4>Rechtliches</h4><a href="#">Impressum</a><br><a href="#">Datenschutz</a></div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ---------- Navigation ---------- */
+const views=document.querySelectorAll('.view'), navBtns=document.querySelectorAll('.menu button');
+const menu=document.getElementById('menu'), burger=document.querySelector('.burger');
+function go(id){
+  views.forEach(v=>v.classList.toggle('active',v.id==='view-'+id));
+  navBtns.forEach(b=>{ if(b.dataset.go===id) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
+  menu.classList.remove('open');burger.setAttribute('aria-expanded','false');
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();go(el.dataset.go)}));
+burger.addEventListener('click',()=>{const o=menu.classList.toggle('open');burger.setAttribute('aria-expanded',o)});
+
+/* ---------- Tabs (Turnier) ---------- */
+document.querySelectorAll('.tabs button').forEach(t=>t.addEventListener('click',()=>{
+  t.parentElement.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',b===t));
+}));
+
+/* ---------- Buchung ---------- */
+const courts=[{n:'Platz 1',d:'Sand · Flutlicht'},{n:'Platz 2',d:'Sand · Flutlicht'},{n:'Platz 3',d:'Sand'},{n:'Platz 4',d:'Sand'},{n:'Halle',d:'Teppich · indoor'}];
+const hours=[8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+const dayNames=['Mo','Di','Mi','Do','Fr','Sa','So'];
+const base=new Date(2026,9,2);
+const daysEl=document.getElementById('days');
+let day=0, sel=null;
+for(let i=0;i<5;i++){
+  const d=new Date(base);d.setDate(base.getDate()+i);
+  const b=document.createElement('button');
+  b.textContent=(i===0?'Heute':dayNames[(d.getDay()+6)%7])+' '+d.getDate()+'.'+(d.getMonth()+1)+'.';
+  b.setAttribute('aria-pressed',i===0);b.dataset.label=d.toLocaleDateString('de-AT',{weekday:'long',day:'numeric',month:'long'});
+  b.onclick=()=>{day=i;sel=null;daysEl.querySelectorAll('button').forEach((x,j)=>x.setAttribute('aria-pressed',j===i));render();summary()};
+  daysEl.appendChild(b);
+}
+function state(c,h){
+  const k=(c*7+h*3+day*5)%11;
+  if(c<2&&(h===17||h===18)&&day%2===1) return ['blocked','Training'];
+  if(day===0&&c===1&&h===18) return ['mine','Meine'];
+  if(k<3) return ['taken','Belegt'];
+  return ['free','Frei'];
+}
+function render(){
+  const t=document.getElementById('slots');
+  let html='<caption class="sr-only">Belegungsplan</caption><thead><tr><th scope="col">Zeit</th>'+courts.map(c=>`<th scope="col">${c.n}<small>${c.d}</small></th>`).join('')+'</tr></thead><tbody>';
+  hours.forEach(h=>{
+    html+=`<tr><th scope="row">${h}:00</th>`;
+    courts.forEach((c,ci)=>{
+      const [s,l]=state(ci,h);const isSel=sel&&sel.c===ci&&sel.h===h;
+      html+= s==='free'
+        ? `<td><button class="slot${isSel?' selected':''}" data-c="${ci}" data-h="${h}" aria-pressed="${!!isSel}" aria-label="${c.n} ${h} Uhr frei">${isSel?'Gewählt':'+'}</button></td>`
+        : `<td><button class="slot ${s}" disabled aria-label="${c.n} ${h} Uhr ${l}">${l}</button></td>`;
+    });
+    html+='</tr>';
+  });
+  t.innerHTML=html+'</tbody>';
+  t.querySelectorAll('.slot:not([disabled])').forEach(b=>b.onclick=()=>{sel={c:+b.dataset.c,h:+b.dataset.h};render();summary()});
+}
+const partner=document.getElementById('partner'), light=document.getElementById('light');
+function price(){
+  let p=0;const guest=partner.value==='guest';
+  if(guest)p+=8; if(light.checked)p+=4; if(sel&&courts[sel.c].n==='Halle')p+=12;
+  return p;
+}
+function summary(){
+  document.getElementById('sum-empty').hidden=!!sel;document.getElementById('sum-full').hidden=!sel;
+  if(!sel)return;
+  const c=courts[sel.c];
+  document.getElementById('s-court').textContent=c.n;
+  document.getElementById('s-day').textContent=daysEl.children[day].dataset.label;
+  document.getElementById('s-time').textContent=`${sel.h}:00 – ${sel.h+1}:00`;
+  const fl=c.d.includes('Flutlicht');light.disabled=!fl;if(!fl)light.checked=false;
+  document.getElementById('guestname-wrap').hidden=partner.value!=='guest';
+  const p=price();
+  document.getElementById('s-total').textContent=p.toFixed(2).replace('.',',')+' €';
+  const parts=[];if(partner.value==='guest')parts.push('Gastgebühr 8,00 €');if(c.n==='Halle')parts.push('Hallenzuschlag 12,00 €');if(light.checked)parts.push('Flutlicht 4,00 €');
+  document.getElementById('s-hint').textContent=(parts.length?parts.join(' · ')+'. Zahlung bar oder per Überweisung. ':'Für Mitglieder kostenlos. ')+'Stornierung bis 6 Std. vorher kostenfrei.';
+}
+partner.onchange=summary;light.onchange=summary;
+document.getElementById('confirm').onclick=()=>{
+  if(partner.value==='guest'&&!document.getElementById('guestname').value.trim()){
+    const g=document.getElementById('guestname');g.focus();g.style.borderColor='var(--err)';toast('Bitte den Namen des Gastes angeben.');return;
+  }
+  toast(`Gebucht: ${courts[sel.c].n}, ${sel.h}:00 Uhr. Bestätigung per E-Mail folgt.`);sel=null;render();summary();
+};
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200)}
+render();summary();
+
+/* ---------- Mitgliederliste ---------- */
+const members=[['Anna Leitner','0664 123 45 67','anna.leitner@mail.at'],['Thomas Gruber','0676 234 56 78','t.gruber@mail.at'],['Johannes Huber','0650 345 67 89','huber.j@mail.at'],['Petra Maier','0664 456 78 90','petra.maier@mail.at'],['Lukas Moser','0699 567 89 01','lukas.moser@mail.at'],['Sabine Pichler','0676 678 90 12','s.pichler@mail.at']];
+const ml=document.getElementById('mlist'), ms=document.getElementById('msearch');
+function renderM(){
+  const q=ms.value.toLowerCase();const f=members.filter(m=>m[0].toLowerCase().includes(q));
+  ml.innerHTML=f.map(m=>`<tr><td>${m[0]}</td><td>${m[1]}</td><td><a href="mailto:${m[2]}">${m[2]}</a></td></tr>`).join('');
+  document.getElementById('mempty').hidden=f.length>0;
+}
+ms.oninput=renderM;renderM();
+</script>
+</body>
+</html>

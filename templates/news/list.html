@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Vereinsnachrichten</span>
+        <h2>Alle Neuigkeiten & Berichte</h2>
+      </div>
+      <!-- Category Filter -->
+      <div class="tabs" style="margin-bottom:0;">
+        <a href="{% url 'news:list' %}" class="{% if not current_category %}active{% endif %}">Alle</a>
+        {% for cat in categories %}
+          <a href="{% url 'news:list' %}?kategorie={{ cat.slug }}" class="{% if current_category == cat.slug %}active{% endif %}">
+            {{ cat.name }} ({{ cat.article_count }})
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if page_obj.object_list %}
+      <div class="news-grid" style="grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));">
+        {% for article in page_obj.object_list %}
+          <div class="card">
+            <div class="news-img" style="aspect-ratio:16/9;">
+              {% if article.cover_image %}
+                <img src="{{ article.cover_image.url }}" alt="{{ article.cover_image_alt }}">
+              {% else %}
+                <div style="display:grid;place-items:center;height:100%;color:#ffffff88;font-family:var(--font-display);font-size:1.8rem;">
+                  {{ club_settings.short_name }}
+                </div>
+              {% endif %}
+            </div>
+            <div class="body">
+              <div class="meta">{{ article.publish_at|date:"d. M Y" }} · {{ article.category.name|default:"Verein" }}</div>
+              <h3><a href="{% url 'news:detail' article.slug %}">{{ article.title }}</a></h3>
+              <p>{{ article.teaser|truncatechars:120 }}</p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Pagination -->
+      {% if page_obj.has_other_pages %}
+        <div style="display:flex;justify-content:center;gap:8px;margin-top:36px;">
+          {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}{% if current_category %}&kategorie={{ current_category }}{% endif %}" class="btn sm ghost">← Zurück</a>
+          {% endif %}
+          <span style="padding:6px 12px;font-size:.9rem;color:var(--muted);">Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% if current_category %}&kategorie={{ current_category }}{% endif %}" class="btn sm ghost">Weiter →</a>
+          {% endif %}
+        </div>
+      {% endif %}
+
+    {% else %}
+      <div class="card" style="padding:32px;text-align:center;color:var(--muted);">
+        Keine Artikel in dieser Kategorie gefunden.
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<section class="court-lines hero" aria-label="Startseite Hero">
+  <span class="service" aria-hidden="true"></span>
+  <div class="wrap">
+    <span class="eyebrow" style="color:var(--ball)">Saison {% now "Y" %} · Plätze geöffnet</span>
+    <h1>Spiel, Satz<br>und Verein.</h1>
+    <p>{{ club_settings.tagline }}</p>
+    <div class="actions">
+      <a href="{% url 'courts:calendar' %}" class="btn court">Platz buchen</a>
+      {% if not user.is_authenticated or user.account_type != 'MEMBER' %}
+        <a href="{% url 'accounts:register' %}" class="btn ghost">Mitglied werden</a>
+      {% endif %}
+    </div>
+    <div class="hero-score" aria-label="Aktuelles Finale: Ortsmeisterschaft">
+      <small>Ortsmeisterschaft · Finale</small>
+      <div class="row"><span>Huber ●</span><b>6 7</b></div>
+      <div class="row" style="opacity:.7"><span>Maier</span><b>4 5</b></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="stats" role="list">
+    <div class="stat" role="listitem"><b>180+</b><span>Aktive Mitglieder</span></div>
+    <div class="stat" role="listitem"><b>4</b><span>Freiplätze + 1 Halle</span></div>
+    <div class="stat" role="listitem"><b>Frei</b><span>Plätze heute ab 17 Uhr</span></div>
+    <div class="stat" role="listitem"><b>Offen</b><span>Ortsmeisterschaft Anmeldung</span></div>
+  </div>
+</div>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Aktuelles</span>
+        <h2>Neuigkeiten aus dem Verein</h2>
+      </div>
+      <a href="{% url 'news:list' %}" class="btn sm ghost" style="color:var(--clay-dark);border-color:var(--clay-dark);">Alle Artikel anzeigen →</a>
+    </div>
+
+    {% if articles %}
+      <div class="news-grid">
+        {% for article in articles %}
+          <div class="card">
+            <div class="news-img">
+              {% if article.cover_image %}
+                <img src="{{ article.cover_image.url }}" alt="{{ article.cover_image_alt }}">
+              {% else %}
+                <div style="display:grid;place-items:center;height:100%;color:#ffffff88;font-family:var(--font-display);font-size:2rem;">
+                  {{ club_settings.short_name }}
+                </div>
+              {% endif %}
+            </div>
+            <div class="body">
+              <div class="meta">{{ article.publish_at|date:"d. M Y" }} · {{ article.category.name|default:"Verein" }}</div>
+              <h3><a href="{% url 'news:detail' article.slug %}">{{ article.title }}</a></h3>
+              <p>{{ article.teaser|truncatechars:130 }}</p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color:var(--muted);">Noch keine Artikel veröffentlicht.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

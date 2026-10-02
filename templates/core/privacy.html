@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:800px;">
+    <h1>Datenschutzerklärung</h1>
+    <div class="card" style="padding:28px 32px;margin-top:20px;line-height:1.7;">
+      {{ club_settings.privacy_text|safe }}
+    </div>
+  </div>
+</section>
+{% endblock %}

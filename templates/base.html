@@ -1,0 +1,118 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ title|default:club_settings.name }}{% endblock %}</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoMVMfnnReHLPH9GqQEyg/0LReW08yhiQW" crossorigin="anonymous"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<a href="#main" class="skip">Zum Inhalt springen</a>
+
+<header>
+  <div class="wrap nav">
+    <a href="{% url 'core:home' %}" class="logo" aria-label="{{ club_settings.name }} Startseite">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+        <circle cx="17" cy="17" r="15" fill="#D7E64A" stroke="#fff" stroke-width="2"/>
+        <path d="M4 11c7 3 7 9 0 12M30 11c-7 3-7 9 0 12" fill="none" stroke="#fff" stroke-width="2"/>
+      </svg>
+      {{ club_settings.name }}
+    </a>
+
+    <button class="burger" id="burgerBtn" aria-expanded="false" aria-controls="menu" aria-label="Menü öffnen">☰</button>
+
+    <nav id="menu" class="menu" aria-label="Hauptnavigation">
+      <a href="{% url 'core:home' %}">Start</a>
+      <a href="{% url 'news:list' %}">News</a>
+      <a href="{% url 'courts:calendar' %}">Platzbuchung</a>
+      <a href="{% url 'tournaments:list' %}">Turniere</a>
+      {% if user.is_authenticated and user.account_type == 'MEMBER' %}
+        <a href="{% url 'members:directory' %}">Mitglieder</a>
+      {% endif %}
+      {% if user.is_staff or user.is_superuser %}
+        <a href="{% url 'members:applications' %}">Anträge</a>
+        <a href="{% url 'billing:dashboard' %}">Kassier</a>
+        <a href="/admin/">Admin</a>
+      {% endif %}
+      <a href="{% url 'core:styleguide' %}">Styleguide</a>
+
+      {% if user.is_authenticated %}
+        <a href="{% url 'accounts:profile' %}" class="user">
+          <span class="avatar" aria-hidden="true">{{ user.get_initials }}</span>
+          {{ user.first_name|default:user.email }}
+        </a>
+        <a href="{% url 'accounts:logout' %}" class="btn sm ghost" style="margin-left:8px;">Abmelden</a>
+      {% else %}
+        <a href="{% url 'accounts:login' %}" class="btn sm ghost" style="margin-left:8px;">Anmelden</a>
+        <a href="{% url 'accounts:register' %}" class="btn sm" style="margin-left:4px;">Registrieren</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  {% if messages %}
+    <div class="wrap messages-container">
+      {% for message in messages %}
+        <div class="alert {{ message.tags|default:'info' }}">
+          <span>{{ message }}</span>
+          <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;font-weight:bold;">✕</button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<footer>
+  <div class="wrap cols">
+    <div>
+      <h4 style="font-size:1.2rem;color:#fff;">{{ club_settings.name }}</h4>
+      <p style="margin:.4rem 0;">{{ club_settings.tagline }}</p>
+      <p style="font-size:.85rem;opacity:.85;">
+        {{ club_settings.address }}<br>
+        E-Mail: {{ club_settings.email }} · Tel: {{ club_settings.phone }}
+      </p>
+    </div>
+    <div>
+      <h4>Bankverbindung</h4>
+      <p style="font-size:.85rem;opacity:.85;line-height:1.6;">
+        Bank: {{ club_settings.bank_name }}<br>
+        IBAN: <code>{{ club_settings.iban }}</code><br>
+        BIC: <code>{{ club_settings.bic }}</code>
+      </p>
+    </div>
+    <div>
+      <h4>Rechtliches & Service</h4>
+      <p style="font-size:.88rem;display:flex;flex-direction:column;gap:6px;">
+        <a href="{% url 'core:imprint' %}">Impressum</a>
+        <a href="{% url 'core:privacy' %}">Datenschutzerklärung</a>
+        <a href="{% url 'tournaments:honor_roll' %}">Ehrentafel Ortsmeister</a>
+        <a href="{% url 'news:feed' %}">RSS-Feed</a>
+      </p>
+    </div>
+  </div>
+  <div class="wrap" style="margin-top:24px;padding-top:16px;border-top:1px solid #ffffff22;font-size:.8rem;opacity:.7;">
+    &copy; {% now "Y" %} {{ club_settings.name }}. Alle Rechte vorbehalten.
+  </div>
+</footer>
+
+<script>
+  document.getElementById('burgerBtn')?.addEventListener('click', function() {
+    var m = document.getElementById('menu');
+    var open = m.classList.toggle('open');
+    this.setAttribute('aria-expanded', open);
+  });
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,123 @@
+# Breakpoint-ng: Modernes Tennisverein-CMS
+
+Ein vollständiges, hochmodernes Web-Portal für Tennisvereine auf Basis von Python 3.12 und **Django 6.0**, PostgreSQL, Celery, Redis und Docker.
+
+---
+
+## 🎾 Kernmodule
+
+1. **News-Portal (N-1 bis N-7):**
+   - Artikel mit Titelbild, Galerie in 3 Größen (Thumbnail, Mittel, Groß), Alt-Text-Validierung.
+   - Status: Entwurf, Veröffentlicht, Archiviert; zeitgesteuerte Veröffentlichung.
+   - Sichtbarkeitsstufen: Öffentlich vs. Nur für Mitglieder.
+   - RSS-Feed für öffentliche Artikel (`/news/feed/`).
+   - XSS-geschützte HTML-Formatierung mit `nh3`.
+
+2. **Mitgliederverwaltung (M-1 bis M-15):**
+   - Selbstregistrierung mit Wahl: Gast oder Mitgliedsantrag (Double-Opt-In per E-Mail).
+   - Administrationsbereich für offene Anträge (Freischalten mit sequentieller Mitgliedsnummer oder Ablehnung mit Begründung).
+   - Revisionssicheres Änderungsprotokoll (Audit-Log).
+   - CSV-Sammelimport mit zeilenweiser Fehlerberichterstattung.
+   - Interne Mitgliederliste (M-12a) für aktive Mitglieder, vor Gästen und Besuchern geschützt (403).
+   - DSGVO Art. 15 JSON-Datenexport.
+   - Celery-Beat-Job zur automatischen Beendigung abgelaufener Mitgliedschaften.
+
+3. **Platzverwaltung & Buchungssystem (P-1 bis P-11):**
+   - Plätze (Sand, Halle), Öffnungszeiten, dynamische Saisons.
+   - Platzsperren (Training, Wetter, Turniere) mit automatischer Stornierung kollidierender Buchungen und E-Mail-Benachrichtigung.
+   - Interaktiver Buchungskalender mit Tag-Auswahl, Slot-Matrix und Live-Kostenberechnung.
+   - Concurrency-Schutz: atomare Transaktionen und Kollisionsprüfungen verhindern Doppelbuchungen zuverlässig.
+   - Vollständig pflegbare Gastgebühren und Extras (z.B. Flutlicht, Hallenaufschlag).
+   - Buchungsregeln (Vorlauf, max. offene Buchungen, max. Dauer, kostenlose Stornierungsfrist).
+   - 24h-Vorab-Erinnerungs-E-Mail per Celery.
+   - Anonymisierte öffentliche Ansicht („Belegt“).
+
+4. **Turniere & Ortsmeisterschaften (T-1 bis T-9):**
+   - Turnierausschreibung für Einzel, Doppel und Mixed in K.-o.- oder Round-Robin-Modus.
+   - Partnerbestätigung bei Doppelanmeldungen und automatische Warteliste.
+   - Startgebühren erzeugen automatisch Forderungen im Billing-System.
+   - K.-o.-Auslosung mit Freilosen (Byes) und entgegengesetzten Positionen für Gesetzte 1 und 2.
+   - Round-Robin-Spielplan mit Echtzeit-Tabelle (Siege, Satz- und Game-Differenz).
+   - Satz-für-Satz Ergebniseingabe mit Tennis-Validierung (z.B. 6:4, 7:6, MTB 10:8) und automatischem Vorrücken der Sieger.
+   - Zuweisung von Matches auf Platz-Slots mit Terminkollisionsprüfung.
+   - Historische Ehrentafel der Ortsmeister.
+
+5. **Zentrales Billing & Kassier-Dashboard (M-7 bis M-10):**
+   - Zentraler Dienst `create_charge` für Mitgliedsbeiträge, Platzgebühren, Gastgebühren und Turnierstartgelder.
+   - Idempotenter automatischer Beitragslauf für das ganze Jahr oder Monate.
+   - Anteilige Berechnung bei unterjährigem Vereinseintritt.
+   - Erfassung von Zahlungen (Überweisung, Bar, SEPA) mit Statusübergängen (Offen → Teilweise bezahlt → Bezahlt).
+   - Kassier-Dashboard mit Kennzahlen und CSV-Export.
+
+---
+
+## 🚀 Schnelleinstieg & Lokale Entwicklung
+
+### Voraussetzungen
+- Python 3.12+
+- Docker & Docker Compose (optional, aber empfohlen für Postgres/Redis)
+
+### 1. Repository klonen und virtuelle Umgebung anlegen
+```bash
+python -m venv .venv
+# Unter Windows:
+.venv\Scripts\activate
+# Unter Linux/macOS:
+source .venv/bin/activate
+```
+
+### 2. Abhängigkeiten installieren
+```bash
+pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+### 3. Datenbank migrieren und Demodaten einspielen
+```bash
+python manage.py migrate
+python manage.py seed_data
+```
+Das Skript `seed_data` richtet automatisch alle Rollen, Einstellungen, 50 Mitglieder, 10 Gäste, 4 Plätze und 2 spielbereite Turniere ein!
+
+### 4. Entwicklungsserver starten
+```bash
+python manage.py runserver
+```
+Webseite aufrufen unter: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+**Standard-Zugangsdaten (Demo):**
+- Administrator: `admin@tc-musterdorf.at` (Passwort: `admin1234`)
+- Kassier: `kassier@tc-musterdorf.at` (Passwort: `kassier1234`)
+- Platzwart: `platzwart@tc-musterdorf.at` (Passwort: `platzwart1234`)
+- Redakteur: `redakteur@tc-musterdorf.at` (Passwort: `redakteur1234`)
+- Turnierleiter: `turnierleiter@tc-musterdorf.at` (Passwort: `turnier1234`)
+- Mitglied: `mitglied01@example.com` (Passwort: `pass1234`)
+- Gast: `gast01@example.com` (Passwort: `gast1234`)
+
+---
+
+## 🧪 Tests ausführen
+
+Die gesamte Geschäftslogik, Sicherheitsregeln, Berechtigungen und Buchungsabläufe sind mit einer umfassenden Pytest-Testsuite abgedeckt:
+
+```bash
+pytest
+```
+Alle 42 Akzeptanzkriterien-Tests laufen grün durch.
+
+---
+
+## 🐳 Docker & Produktion
+
+Für den Produktivbetrieb stehen vorgefertigte Compose-Dateien bereit:
+
+```bash
+# Mit Docker Compose starten (inkl. Postgres 16, Redis, Celery und Cloudflare Tunnel):
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### Wartung & Updates
+- Updates mit einem Befehl: `./update.sh`
+- Datenbank-Backup: `./scripts/backup.sh`
+- Backup wiederherstellen: `./scripts/restore.sh backups/<backup-datei>.sql.gz`
+- Ausführliche Anleitung für den Vorstand: siehe [ADMIN_HANDBUCH.md](ADMIN_HANDBUCH.md).

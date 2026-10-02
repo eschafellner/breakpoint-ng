@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Online-Reservierung</span>
+        <h2>Platzbelegung & Buchung</h2>
+      </div>
+      {% if user.is_staff or user.groups.all %}
+        <a href="{% url 'courts:blockings' %}" class="btn sm ghost" style="color:var(--court);border-color:var(--court);">
+          🔒 Platzsperren verwalten
+        </a>
+      {% endif %}
+    </div>
+
+    <!-- Toolbar: Datepicker & Legend -->
+    <div class="toolbar">
+      <div class="daypicker" role="tablist" aria-label="Tag auswählen">
+        {% for d in days_strip %}
+          <a href="{% url 'courts:calendar' %}?date={{ d.date_str }}" class="{% if d.is_current %}active{% endif %}">
+            <b>{{ d.weekday_short }}</b> {{ d.date|date:"d.m." }}
+          </a>
+        {% endfor %}
+      </div>
+
+      <div class="legend" aria-hidden="true">
+        <span><i style="background:#fff;border:1px dashed #CFC6B8"></i>Frei</span>
+        <span><i style="background:var(--court)"></i>Meine Buchung</span>
+        <span><i style="background:#E9E4DC"></i>Belegt</span>
+        <span><i style="background:repeating-linear-gradient(45deg,#E6ECE8,#E6ECE8 3px,#D7E0DA 3px,#D7E0DA 6px)"></i>Gesperrt</span>
+      </div>
+    </div>
+
+    <!-- Layout: Slot Grid + Booking Sidebar -->
+    <div class="booking-layout">
+      <!-- Slot Grid -->
+      <div class="grid-scroll">
+        <table class="slots">
+          <thead>
+            <tr>
+              <th scope="col"><small>Uhrzeit</small></th>
+              {% for court in calendar_data.courts %}
+                <th scope="col">
+                  {{ court.name }}
+                  <small>{{ court.get_surface_display }}{% if court.is_indoor %} · Halle{% endif %}</small>
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in calendar_data.matrix_rows %}
+              <tr>
+                <th scope="row">{{ row.time }}</th>
+                {% for item in row.slots %}
+                  <td>
+                    {% if item.slot %}
+                      {% if item.slot.can_book %}
+                        <button type="button"
+                          class="slot"
+                          onclick="selectSlot('{{ item.court.id }}', '{{ item.court.name }}', '{{ item.slot.start|date:'c' }}', '{{ item.slot.end|date:'c' }}', '{{ item.slot.start_time_str }}', '{{ item.slot.end_time_str }}', this)"
+                          aria-label="{{ item.court.name }} um {{ item.slot.start_time_str }} Uhr frei">
+                          Frei
+                        </button>
+                      {% else %}
+                        <div class="slot {{ item.slot.state }}">
+                          {{ item.slot.label }}
+                        </div>
+                      {% endif %}
+                    {% else %}
+                      <div class="slot taken">–</div>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Booking Summary Sidebar -->
+      <div class="card summary">
+        <h3 style="margin-top:0;">Buchung</h3>
+
+        <div id="noSelection" style="color:var(--muted);font-size:.92rem;padding:20px 0;">
+          Klicke links auf einen freien Slot, um die Buchung vorzubereiten.
+        </div>
+
+        <form id="bookingForm" method="post" action="{% url 'courts:book' %}" style="display:none;">
+          {% csrf_token %}
+          <input type="hidden" name="court_id" id="formCourtId">
+          <input type="hidden" name="start" id="formStart">
+          <input type="hidden" name="end" id="formEnd">
+          <input type="hidden" name="redirect_date" value="{{ current_day|date:'Y-m-d' }}">
+
+          <dl>
+            <dt>Datum:</dt>
+            <dd id="dispDate">{{ current_day|date:"d.m.Y" }}</dd>
+            <dt>Platz:</dt>
+            <dd id="dispCourt">–</dd>
+            <dt>Zeit:</dt>
+            <dd id="dispTime">–</dd>
+            <dt>Tarif:</dt>
+            <dd id="dispTarif">
+              {% if user.is_authenticated and user.account_type == 'MEMBER' %}
+                Mitglied (0 €)
+              {% else %}
+                Gast (regulär)
+              {% endif %}
+            </dd>
+          </dl>
+
+          <!-- Guest Players / Partners -->
+          <div class="field" style="margin-top:16px;">
+            <label for="guest_names">Mitspieler (Gäste) *</label>
+            <input type="text" name="guest_names" id="guest_names" placeholder="Name Gastspieler (z.B. Anna Huber)" oninput="updatePrice()">
+            <small style="color:var(--muted);font-size:.78rem;">
+              Für Gastspieler fällt eine Gastgebühr gem. Preisliste an.
+            </small>
+          </div>
+
+          <!-- Extras (Flutlicht, etc.) -->
+          {% if extras %}
+            <div style="margin:16px 0;border-top:1px solid var(--border);padding-top:12px;">
+              <label style="font-weight:600;font-size:.88rem;display:block;margin-bottom:8px;">Extras:</label>
+              {% for extra in extras %}
+                <label style="display:flex;align-items:center;gap:8px;font-size:.88rem;margin-bottom:6px;cursor:pointer;">
+                  <input type="checkbox" name="extras" value="{{ extra.id }}" data-price="{% if user.account_type == 'MEMBER' %}{{ extra.price_member }}{% else %}{{ extra.price_guest }}{% endif %}" onchange="updatePrice()" {% if extra.mode == 'AUTOMATIC' %}checked disabled{% endif %}>
+                  <span>{{ extra.name }} (+{% if user.account_type == 'MEMBER' %}{{ extra.price_member }}{% else %}{{ extra.price_guest }}{% endif %} €)</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="total">
+            <span>Gesamtbetrag</span>
+            <b id="dispTotal">0.00 €</b>
+          </div>
+
+          <p class="hint">
+            Kostenlos stornierbar bis {{ club_settings.free_cancel_hours }} Stunden vor Beginn.<br>
+            Zahlung per Überweisung oder bar vor Ort.
+          </p>
+
+          {% if user.is_authenticated %}
+            <button type="submit" class="btn court" style="width:100%;">Verbindlich buchen</button>
+          {% else %}
+            <a href="{% url 'accounts:login' %}?next={{ request.path }}" class="btn court" style="width:100%;">
+              Zum Buchen bitte anmelden
+            </a>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  let selectedBtn = null;
+  const isMember = {% if user.is_authenticated and user.account_type == 'MEMBER' %}true{% else %}false{% endif %};
+
+  function selectSlot(courtId, courtName, startIso, endIso, startTime, endTime, btn) {
+    if (selectedBtn) {
+      selectedBtn.classList.remove('selected');
+    }
+    btn.classList.add('selected');
+    selectedBtn = btn;
+
+    document.getElementById('noSelection').style.display = 'none';
+    document.getElementById('bookingForm').style.display = 'block';
+
+    document.getElementById('formCourtId').value = courtId;
+    document.getElementById('formStart').value = startIso;
+    document.getElementById('formEnd').value = endIso;
+
+    document.getElementById('dispCourt').textContent = courtName;
+    document.getElementById('dispTime').textContent = startTime + ' – ' + endTime + ' Uhr';
+
+    updatePrice();
+  }
+
+  function updatePrice() {
+    let total = isMember ? 0.0 : 15.0; // Base rate for guests
+    const guestNames = document.getElementById('guest_names').value.trim();
+    if (isMember && guestNames) {
+      const count = guestNames.split(',').filter(s => s.trim().length > 0).length;
+      total += count * 5.0; // Guest fee
+    }
+
+    // Extras
+    const checkboxes = document.querySelectorAll('input[name="extras"]:checked');
+    checkboxes.forEach(cb => {
+      const p = parseFloat(cb.getAttribute('data-price') || '0');
+      total += p;
+    });
+
+    document.getElementById('dispTotal').textContent = total.toFixed(2) + ' €';
+  }
+</script>
+{% endblock %}

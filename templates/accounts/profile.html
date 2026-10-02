@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Benutzerkonto</span>
+        <h2>Mein Profil</h2>
+      </div>
+      <a href="{% url 'accounts:export_data' %}" class="btn sm ghost" style="color:var(--ink);border-color:var(--border);">
+        📥 Datenexport herunterladen (Art. 15 DSGVO)
+      </a>
+    </div>
+
+    <div class="member-grid">
+      <!-- Left: Profile Summary Card -->
+      <div class="card profile">
+        <div style="text-align:center;">
+          {% if user.avatar %}
+            <img src="{{ user.avatar.url }}" alt="{{ user.get_full_name }}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin:0 auto 12px;">
+          {% else %}
+            <div class="avatar" style="width:72px;height:72px;font-size:1.6rem;margin:0 auto 12px;">{{ user.get_initials }}</div>
+          {% endif %}
+          <h3 style="margin:0;">{{ user.get_full_name|default:user.email }}</h3>
+          <p style="color:var(--muted);font-size:.88rem;margin:4px 0 12px;">{{ user.email }}</p>
+          <span class="badge {% if user.is_member %}green{% else %}warn{% endif %}">
+            {{ user.get_account_type_display }}
+          </span>
+        </div>
+
+        {% if membership %}
+          <div class="memcard">
+            <small>Mitgliedskarte</small>
+            <b>{{ membership.member_number }}</b>
+            <div style="font-size:.85rem;margin-top:6px;">
+              {{ membership.type.name }}<br>
+              Seit: {{ membership.start_date|date:"d.m.Y" }}
+            </div>
+          </div>
+        {% endif %}
+
+        <div style="margin-top:20px;font-size:.88rem;color:var(--muted);border-top:1px solid var(--border);padding-top:14px;">
+          <div><b>Telefon:</b> {{ user.phone|default:"–" }}</div>
+          <div style="margin-top:4px;"><b>Adresse:</b> {{ user.address_street|default:"–" }}, {{ user.address_zip }} {{ user.address_city }}</div>
+          <div style="margin-top:4px;"><b>Geburtsdatum:</b> {{ user.birth_date|date:"d.m.Y"|default:"–" }}</div>
+        </div>
+      </div>
+
+      <!-- Right: Main Sections -->
+      <div style="display:flex;flex-direction:column;gap:24px;">
+        <!-- Edit Profile -->
+        <div class="card" style="padding:24px;">
+          <h3 style="margin-bottom:16px;">Kontaktdaten bearbeiten</h3>
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <label for="id_first_name">Vorname</label>
+                <input type="text" name="first_name" id="id_first_name" value="{{ form.first_name.value|default:'' }}" class="input">
+              </div>
+              <div class="field">
+                <label for="id_last_name">Nachname</label>
+                <input type="text" name="last_name" id="id_last_name" value="{{ form.last_name.value|default:'' }}" class="input">
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <label for="id_phone">Telefon</label>
+                <input type="text" name="phone" id="id_phone" value="{{ form.phone.value|default:'' }}" class="input">
+              </div>
+              <div class="field">
+                <label for="id_birth_date">Geburtsdatum</label>
+                <input type="date" name="birth_date" id="id_birth_date" value="{{ form.birth_date.value|date:'Y-m-d'|default:'' }}" class="input">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="id_address_street">Straße & Hausnummer</label>
+              <input type="text" name="address_street" id="id_address_street" value="{{ form.address_street.value|default:'' }}" class="input">
+            </div>
+
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:12px;">
+              <div class="field">
+                <label for="id_address_zip">PLZ</label>
+                <input type="text" name="address_zip" id="id_address_zip" value="{{ form.address_zip.value|default:'' }}" class="input">
+              </div>
+              <div class="field">
+                <label for="id_address_city">Ort</label>
+                <input type="text" name="address_city" id="id_address_city" value="{{ form.address_city.value|default:'' }}" class="input">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="id_avatar">Profilbild ändern</label>
+              <input type="file" name="avatar" id="id_avatar" class="input">
+            </div>
+
+            <button type="submit" class="btn court" style="margin-top:8px;">Änderungen speichern</button>
+          </form>
+        </div>
+
+        <!-- Recent Bookings -->
+        <div class="card">
+          <div class="panel-head">
+            <h3 style="margin:0;">Meine letzten Buchungen</h3>
+            <a href="{% url 'courts:calendar' %}" class="btn sm ghost" style="color:var(--clay);border-color:var(--clay);">+ Neuer Slot</a>
+          </div>
+          {% if recent_bookings %}
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Platz</th>
+                  <th>Datum & Zeit</th>
+                  <th>Preis</th>
+                  <th>Status</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for b in recent_bookings %}
+                  <tr>
+                    <td><b>{{ b.court.name }}</b></td>
+                    <td>{{ b.start|date:"d.m.Y" }} · {{ b.start|date:"H:i" }}–{{ b.end|date:"H:i" }}</td>
+                    <td>{{ b.total_price }} €</td>
+                    <td>
+                      <span class="badge {% if b.status == 'CONFIRMED' %}ok{% else %}err{% endif %}">
+                        {{ b.get_status_display }}
+                      </span>
+                    </td>
+                    <td>
+                      {% if b.status == 'CONFIRMED' %}
+                        <form method="post" action="{% url 'courts:cancel' b.id %}" onsubmit="return confirm('Möchtest du diese Buchung wirklich stornieren?');">
+                          {% csrf_token %}
+                          <button type="submit" class="btn sm ghost" style="color:var(--err);border-color:var(--err);padding:3px 8px;">Stornieren</button>
+                        </form>
+                      {% else %}
+                        –
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div style="padding:20px;color:var(--muted);font-size:.92rem;">Bisher noch keine Buchungen vorhanden.</div>
+          {% endif %}
+        </div>
+
+        <!-- Charges & Invoices -->
+        <div class="card">
+          <div class="panel-head">
+            <h3 style="margin:0;">Beiträge & Gebühren</h3>
+          </div>
+          {% if charges %}
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Fälligkeit</th>
+                  <th>Verwendungszweck</th>
+                  <th>Betrag</th>
+                  <th>Offen</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for c in charges %}
+                  <tr>
+                    <td>{{ c.due_date|date:"d.m.Y" }}</td>
+                    <td><b>{{ c.description }}</b></td>
+                    <td>{{ c.amount }} €</td>
+                    <td><b>{{ c.open_amount }} €</b></td>
+                    <td>
+                      <span class="badge {% if c.status == 'PAID' %}ok{% elif c.status == 'PARTIAL' or c.status == 'OPEN' %}warn{% else %}err{% endif %}">
+                        {{ c.get_status_display }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div style="padding:20px;color:var(--muted);font-size:.92rem;">Keine Gebühren oder Forderungen verzeichnet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

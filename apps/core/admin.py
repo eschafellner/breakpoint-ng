@@ -1,0 +1,53 @@
+from django.contrib import admin
+from .models import ClubSettings, AuditLog
+
+@admin.register(ClubSettings)
+class ClubSettingsAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ("Allgemein", {
+            "fields": ("name", "short_name", "tagline", "logo")
+        }),
+        ("Kontakt", {
+            "fields": ("email", "phone", "address")
+        }),
+        ("Bankverbindung", {
+            "fields": ("bank_name", "iban", "bic", "payment_reference_prefix")
+        }),
+        ("Buchungsregeln", {
+            "fields": (
+                "advance_days_member",
+                "advance_days_guest",
+                "max_open_bookings",
+                "max_duration_minutes",
+                "free_cancel_hours",
+            )
+        }),
+        ("Beitragsregeln", {
+            "fields": ("prorated_membership_fees",)
+        }),
+        ("Rechtliches", {
+            "fields": ("imprint_text", "privacy_text")
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Disallow adding more than one instance
+        if ClubSettings.objects.exists():
+            return False
+        return super().has_add_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "user", "action", "entity_type", "entity_id", "ip_address")
+    list_filter = ("action", "entity_type", "created_at")
+    search_fields = ("entity_id", "user__email", "changes")
+    readonly_fields = ("created_at", "user", "action", "entity_type", "entity_id", "changes", "ip_address")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

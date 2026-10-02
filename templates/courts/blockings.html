@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div style="margin-bottom:12px;">
+      <a href="{% url 'courts:calendar' %}" style="font-size:.88rem;color:var(--muted);">← Zurück zum Buchungskalender</a>
+    </div>
+
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Platzwart-Bereich</span>
+        <h2>Platzsperren verwalten</h2>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:360px 1fr;gap:24px;align-items:start;">
+      <!-- Form to add blocking -->
+      <div class="card" style="padding:24px;">
+        <h3 style="margin-top:0;">Neue Sperre anlegen</h3>
+        <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px;">
+          Bestehende Buchungen im gewählten Zeitraum werden automatisch storniert und die Buchenden per E-Mail benachrichtigt.
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          <div class="field">
+            <label for="court_id">Platz *</label>
+            <select name="court_id" id="court_id" required>
+              {% for c in courts %}
+                <option value="{{ c.id }}">{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="reason">Grund der Sperre *</label>
+            <select name="reason" id="reason">
+              {% for val, label in reasons %}
+                <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="start">Beginn (Datum & Uhrzeit) *</label>
+            <input type="datetime-local" name="start" id="start" required>
+          </div>
+
+          <div class="field">
+            <label for="end">Ende (Datum & Uhrzeit) *</label>
+            <input type="datetime-local" name="end" id="end" required>
+          </div>
+
+          <div class="field">
+            <label for="note">Bemerkung / Anmerkung</label>
+            <input type="text" name="note" id="note" placeholder="z.B. Jugendtraining U14 oder Regen">
+          </div>
+
+          <button type="submit" class="btn court" style="width:100%;margin-top:8px;">Sperre eintragen</button>
+        </form>
+      </div>
+
+      <!-- List of active blockings -->
+      <div class="card">
+        <div class="panel-head">
+          <h3 style="margin:0;">Aktuelle & Geplante Sperren</h3>
+        </div>
+        {% if blockings %}
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Platz</th>
+                <th>Zeitraum</th>
+                <th>Grund</th>
+                <th>Bemerkung</th>
+                <th>Erfasst von</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for b in blockings %}
+                <tr>
+                  <td><b>{{ b.court.name }}</b></td>
+                  <td>{{ b.start|date:"d.m.Y H:i" }} – {{ b.end|date:"H:i" }}</td>
+                  <td><span class="badge warn">{{ b.get_reason_display }}</span></td>
+                  <td>{{ b.note|default:"–" }}</td>
+                  <td>{{ b.created_by.first_name|default:"System" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div style="padding:28px;text-align:center;color:var(--muted);">Keine Platzsperren verzeichnet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

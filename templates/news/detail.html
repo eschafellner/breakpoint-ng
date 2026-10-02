@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:840px;">
+    <div style="margin-bottom:12px;">
+      <a href="{% url 'news:list' %}" style="font-size:.88rem;color:var(--muted);">← Zurück zur Übersicht</a>
+    </div>
+
+    <div class="meta" style="font-size:.9rem;color:var(--muted);margin-bottom:8px;">
+      {{ article.publish_at|date:"d. F Y, H:i" }} Uhr · {{ article.category.name|default:"Verein" }}
+      {% if article.author %} · Von {{ article.author.get_full_name }}{% endif %}
+      {% if article.visibility == 'MEMBERS' %}
+        · <span class="badge green">Nur für Mitglieder</span>
+      {% endif %}
+    </div>
+
+    <h1>{{ article.title }}</h1>
+
+    {% if article.teaser %}
+      <p style="font-size:1.2rem;font-weight:500;color:var(--ink);line-height:1.5;margin:16px 0 24px;">
+        {{ article.teaser }}
+      </p>
+    {% endif %}
+
+    {% if article.cover_image %}
+      <div style="margin-bottom:32px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);">
+        <img src="{{ article.cover_image.url }}" alt="{{ article.cover_image_alt }}" style="width:100%;height:auto;display:block;">
+      </div>
+    {% endif %}
+
+    <div class="card" style="padding:32px 36px;font-size:1.05rem;line-height:1.75;">
+      {{ article.body|safe }}
+    </div>
+
+    <!-- Gallery Images (N-1, N-5) -->
+    {% if article.gallery_images.exists %}
+      <h3 style="margin-top:40px;margin-bottom:16px;">Bildergalerie</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:16px;">
+        {% for img in article.gallery_images.all %}
+          <div class="card">
+            <a href="{{ img.image.url }}" target="_blank">
+              <img src="{% if img.image_medium %}{{ img.image_medium.url }}{% else %}{{ img.image.url }}{% endif %}" alt="{{ img.alt_text }}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;">
+            </a>
+            {% if img.caption %}
+              <div style="padding:8px 12px;font-size:.82rem;color:var(--muted);">{{ img.caption }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

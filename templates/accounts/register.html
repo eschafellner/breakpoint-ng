@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:620px;">
+    <div class="card" style="padding:32px 30px;">
+      <h2>Registrierung</h2>
+      <p style="color:var(--muted);font-size:.9rem;margin-bottom:20px;">
+        Wähle, ob du dich als Gast registrieren oder eine Vereinsmitgliedschaft beantragen möchtest.
+      </p>
+
+      {% if form.non_field_errors %}
+        <div class="alert error" style="margin-bottom:16px;">
+          {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <div style="background:#F6F2EB;padding:16px;border-radius:var(--radius);margin-bottom:20px;">
+          <label style="font-weight:600;display:block;margin-bottom:8px;">Registrierungsart:</label>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            {% for radio in form.account_type %}
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                {{ radio.tag }} {{ radio.choice_label }}
+              </label>
+            {% endfor %}
+          </div>
+          {% if form.account_type.errors %}<small style="color:var(--err);">{{ form.account_type.errors.0 }}</small>{% endif %}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field">
+            <label for="id_first_name">Vorname *</label>
+            <input type="text" name="first_name" id="id_first_name" value="{{ form.first_name.value|default:'' }}" class="input" required>
+            {% if form.first_name.errors %}<small style="color:var(--err);">{{ form.first_name.errors.0 }}</small>{% endif %}
+          </div>
+          <div class="field">
+            <label for="id_last_name">Nachname *</label>
+            <input type="text" name="last_name" id="id_last_name" value="{{ form.last_name.value|default:'' }}" class="input" required>
+            {% if form.last_name.errors %}<small style="color:var(--err);">{{ form.last_name.errors.0 }}</small>{% endif %}
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="id_email">E-Mail-Adresse *</label>
+          <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}" class="input" required>
+          {% if form.email.errors %}<small style="color:var(--err);">{{ form.email.errors.0 }}</small>{% endif %}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field">
+            <label for="id_phone">Telefon</label>
+            <input type="text" name="phone" id="id_phone" value="{{ form.phone.value|default:'' }}" class="input">
+          </div>
+          <div class="field">
+            <label for="id_birth_date">Geburtsdatum</label>
+            <input type="date" name="birth_date" id="id_birth_date" value="{{ form.birth_date.value|default:'' }}" class="input">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="id_address_street">Straße & Hausnummer</label>
+          <input type="text" name="address_street" id="id_address_street" value="{{ form.address_street.value|default:'' }}" class="input">
+        </div>
+
+        <div style="display:grid;grid-template-columns:100px 1fr;gap:12px;">
+          <div class="field">
+            <label for="id_address_zip">PLZ</label>
+            <input type="text" name="address_zip" id="id_address_zip" value="{{ form.address_zip.value|default:'' }}" class="input">
+          </div>
+          <div class="field">
+            <label for="id_address_city">Ort</label>
+            <input type="text" name="address_city" id="id_address_city" value="{{ form.address_city.value|default:'' }}" class="input">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field">
+            <label for="id_password">Passwort (mind. 8 Zeichen) *</label>
+            <input type="password" name="password" id="id_password" class="input" required>
+            {% if form.password.errors %}<small style="color:var(--err);">{{ form.password.errors.0 }}</small>{% endif %}
+          </div>
+          <div class="field">
+            <label for="id_password_confirm">Passwort wiederholen *</label>
+            <input type="password" name="password_confirm" id="id_password_confirm" class="input" required>
+            {% if form.password_confirm.errors %}<small style="color:var(--err);">{{ form.password_confirm.errors.0 }}</small>{% endif %}
+          </div>
+        </div>
+
+        <div id="memberFields" style="border-top:1px solid var(--border);padding-top:16px;margin-top:10px;">
+          <div class="field">
+            <label for="id_membership_type">Gewünschte Mitgliedschaftsart</label>
+            {{ form.membership_type }}
+            {% if form.membership_type.errors %}<small style="color:var(--err);">{{ form.membership_type.errors.0 }}</small>{% endif %}
+          </div>
+          <div class="field">
+            <label for="id_sepa_iban">SEPA IBAN für Beitragszahlung (optional)</label>
+            <input type="text" name="sepa_iban" id="id_sepa_iban" value="{{ form.sepa_iban.value|default:'' }}" class="input" placeholder="AT00 0000 0000 0000 0000">
+          </div>
+        </div>
+
+        <div style="margin:16px 0;">
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:.88rem;cursor:pointer;">
+            <input type="checkbox" name="consent_privacy" required style="margin-top:3px;">
+            <span>Ich stimme der <a href="{% url 'core:privacy' %}" target="_blank">Datenschutzerklärung</a> und der Vereinssatzung zu. (DSGVO)</span>
+          </label>
+          {% if form.consent_privacy.errors %}<small style="color:var(--err);">{{ form.consent_privacy.errors.0 }}</small>{% endif %}
+        </div>
+
+        <button type="submit" class="btn court" style="width:100%;margin-top:10px;">Registrierung abschließen</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

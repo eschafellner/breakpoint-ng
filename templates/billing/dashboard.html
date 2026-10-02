@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Finanzverwaltung</span>
+        <h2>Kassier-Dashboard</h2>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;">
+        <a href="{% url 'billing:export_csv' %}?status={{ status_filter }}&q={{ search_query }}" class="btn sm ghost" style="color:var(--ink);border-color:var(--border);">
+          📥 CSV-Export
+        </a>
+
+        <!-- Trigger Fee Run Form -->
+        <form method="post" action="{% url 'billing:run_fees' %}" style="display:inline-flex;gap:6px;" onsubmit="return confirm('Möchtest du den Beitragslauf jetzt starten?');">
+          {% csrf_token %}
+          <input type="hidden" name="year" value="{{ current_year }}">
+          <button type="submit" class="btn sm court">
+            ⚡ Beitragslauf {{ current_year }} ausführen
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Summary Stats Strip -->
+    <div class="stats" style="margin-bottom:28px;">
+      <div class="stat"><b>{{ summary.open_amount|floatformat:2 }} €</b><span>Offene Forderungen</span></div>
+      <div class="stat"><b>{{ summary.paid_amount|floatformat:2 }} €</b><span>Eingenommen (Bezahlt)</span></div>
+      <div class="stat"><b>{{ summary.total_amount|floatformat:2 }} €</b><span>Gesamtvolumen</span></div>
+      <div class="stat">
+        <b style="color:{% if summary.overdue_count %}var(--err){% else %}var(--ok){% endif %};">
+          {{ summary.overdue_count }}
+        </b>
+        <span>Überfällige Posten</span>
+      </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="card" style="padding:16px 20px;margin-bottom:20px;">
+      <form method="get" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <input type="text" name="q" value="{{ search_query }}" placeholder="Nach Name, E-Mail oder Verwendungszweck suchen..." class="input" style="padding:8px 12px;">
+        </div>
+        <div>
+          <select name="status" class="input" style="padding:8px 12px;" onchange="this.form.submit()">
+            <option value="">– Alle Status –</option>
+            {% for code, label in statuses %}
+              <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn sm court">Filtern</button>
+        {% if search_query or status_filter %}
+          <a href="{% url 'billing:dashboard' %}" class="btn sm ghost" style="color:var(--muted);border-color:var(--border);">Zurücksetzen</a>
+        {% endif %}
+      </form>
+    </div>
+
+    <!-- Charges Table -->
+    <div class="card">
+      <div class="panel-head">
+        <h3 style="margin:0;">Forderungen ({{ charges|length }})</h3>
+      </div>
+      {% if charges %}
+        <table class="data">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nutzer / Mitglied</th>
+              <th>Art & Zweck</th>
+              <th>Fälligkeit</th>
+              <th class="num">Betrag</th>
+              <th class="num">Offen</th>
+              <th>Status</th>
+              <th>Zahlung erfassen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in charges %}
+              <tr>
+                <td>#{{ c.id }}</td>
+                <td>
+                  <b>{{ c.user.get_full_name|default:c.user.email }}</b><br>
+                  <small style="color:var(--muted);">{{ c.user.email }}</small>
+                </td>
+                <td>
+                  <span class="badge" style="font-size:.68rem;">{{ c.get_kind_display }}</span><br>
+                  {{ c.description }}
+                </td>
+                <td>{{ c.due_date|date:"d.m.Y" }}</td>
+                <td class="num">{{ c.amount }} €</td>
+                <td class="num"><b style="color:{% if c.open_amount > 0 %}var(--err){% else %}var(--ok){% endif %};">{{ c.open_amount }} €</b></td>
+                <td>
+                  <span class="badge {% if c.status == 'PAID' %}ok{% elif c.status == 'PARTIAL' or c.status == 'OPEN' %}warn{% else %}err{% endif %}">
+                    {{ c.get_status_display }}
+                  </span>
+                </td>
+                <td>
+                  {% if c.status == 'OPEN' or c.status == 'PARTIAL' %}
+                    <form method="post" action="{% url 'billing:record_payment' c.id %}" style="display:flex;gap:4px;align-items:center;">
+                      {% csrf_token %}
+                      <input type="text" name="amount" value="{{ c.open_amount }}" style="width:75px;padding:4px 6px;font-size:.85rem;border:1px solid #ccc;border-radius:4px;text-align:right;">
+                      <select name="method" style="padding:4px;font-size:.82rem;border:1px solid #ccc;border-radius:4px;">
+                        <option value="TRANSFER">Überw.</option>
+                        <option value="CASH">Bar</option>
+                        <option value="SEPA">SEPA</option>
+                      </select>
+                      <button type="submit" class="btn sm" style="background:var(--ok);border-color:var(--ok);padding:4px 8px;" title="Zahlung buchen">
+                        ✓
+                      </button>
+                    </form>
+                  {% else %}
+                    <span style="color:var(--muted);font-size:.85rem;">Beglichen</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding:32px;text-align:center;color:var(--muted);">
+          Keine passenden Forderungen gefunden.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

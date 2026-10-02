@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Mitgliederbereich (Intern)</span>
+        <h2>Mitgliederverzeichnis</h2>
+        <p style="color:var(--muted);font-size:.9rem;margin:4px 0 0;">
+          Kontaktdaten der aktiven Vereinsmitglieder (nur für Mitglieder sichtbar gem. DSGVO).
+        </p>
+      </div>
+
+      <!-- Search box -->
+      <form method="get" style="display:flex;gap:8px;">
+        <input type="text" name="q" value="{{ query|default:'' }}" placeholder="Name, E-Mail oder Tel..." class="searchbox">
+        <button type="submit" class="btn court sm">Suchen</button>
+        {% if query %}
+          <a href="{% url 'members:directory' %}" class="btn ghost sm" style="color:var(--muted);border-color:var(--border);">Zurücksetzen</a>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="card">
+      {% if memberships %}
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Mitgliedsnr.</th>
+              <th>Name</th>
+              <th>Mitgliedschaft</th>
+              <th>Telefon</th>
+              <th>E-Mail-Adresse</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in memberships %}
+              <tr>
+                <td><code>{{ m.member_number }}</code></td>
+                <td><b>{{ m.user.get_full_name|default:m.user.email }}</b></td>
+                <td><span class="badge green">{{ m.type.name }}</span></td>
+                <td>{{ m.user.phone|default:"–" }}</td>
+                <td><a href="mailto:{{ m.user.email }}">{{ m.user.email }}</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding:32px;text-align:center;color:var(--muted);">
+          Keine Mitglieder gefunden{% if query %} für Suchbegriff „{{ query }}“{% endif %}.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

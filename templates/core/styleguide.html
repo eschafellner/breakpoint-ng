@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap">
+    <h1>Design Tokens & Styleguide</h1>
+    <p style="color:var(--muted);max-width:650px;">
+      Übersicht über die visuellen Marken-Tokens des TC Musterdorf (Sandplatz-Rot, Court-Dunkelgrün, Ball-Gelb, Chalk-Hintergrund).
+    </p>
+
+    <h3 style="margin-top:32px;">Farbtokens</h3>
+    <div class="swatches" style="margin-top:16px;">
+      <div class="sw"><div style="background:#B94E33"></div><p><b>Sand / Clay</b><br><code>#B94E33</code></p></div>
+      <div class="sw"><div style="background:#8E3A25"></div><p><b>Clay Dark</b><br><code>#8E3A25</code></p></div>
+      <div class="sw"><div style="background:#F3DDD3"></div><p><b>Clay Soft</b><br><code>#F3DDD3</code></p></div>
+      <div class="sw"><div style="background:#1E3B2F"></div><p><b>Court Grün</b><br><code>#1E3B2F</code></p></div>
+      <div class="sw"><div style="background:#2B5141"></div><p><b>Court 2</b><br><code>#2B5141</code></p></div>
+      <div class="sw"><div style="background:#D7E64A"></div><p><b>Tennisball</b><br><code>#D7E64A</code></p></div>
+      <div class="sw"><div style="background:#FBF8F3;border-bottom:1px solid #ddd"></div><p><b>Chalk</b><br><code>#FBF8F3</code></p></div>
+      <div class="sw"><div style="background:#1B1F1D"></div><p style="color:#fff;background:#1B1F1D"><b>Ink (Text)</b><br><code>#1B1F1D</code></p></div>
+    </div>
+
+    <h3 style="margin-top:40px;">Buttons & Komponenten</h3>
+    <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;">
+      <button class="btn">Primär Clay</button>
+      <button class="btn court">Court Grün</button>
+      <button class="btn ghost" style="color:var(--ink);border-color:var(--ink);">Ghost</button>
+      <button class="btn sm">Klein</button>
+      <span class="badge ok">Bezahlt / Aktiv</span>
+      <span class="badge warn">Offen / Wartend</span>
+      <span class="badge err">Storniert / Abgelehnt</span>
+    </div>
+  </div>
+</section>
+{% endblock %}

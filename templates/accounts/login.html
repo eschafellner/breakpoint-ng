@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="section">
+  <div class="wrap" style="max-width:440px;">
+    <div class="card" style="padding:32px 28px;">
+      <h2>Anmelden</h2>
+      <p style="color:var(--muted);font-size:.9rem;margin-bottom:20px;">
+        Melde dich mit deiner E-Mail-Adresse an.
+      </p>
+
+      {% if form.non_field_errors %}
+        <div class="alert error" style="margin-bottom:16px;">
+          {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <div class="field">
+          <label for="id_email">E-Mail-Adresse</label>
+          {{ form.email }}
+          {% if form.email.errors %}<small style="color:var(--err);">{{ form.email.errors.0 }}</small>{% endif %}
+        </div>
+
+        <div class="field">
+          <label for="id_password">Passwort</label>
+          {{ form.password }}
+          {% if form.password.errors %}<small style="color:var(--err);">{{ form.password.errors.0 }}</small>{% endif %}
+        </div>
+
+        <button type="submit" class="btn court" style="width:100%;margin-top:10px;">Jetzt anmelden</button>
+      </form>
+
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:.88rem;">
+        Noch kein Konto? <a href="{% url 'accounts:register' %}">Hier registrieren</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
