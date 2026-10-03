@@ -4,6 +4,7 @@ x-app: &app
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.prod
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY muss gesetzt sein}
+    DJANGO_SECRET_KEY_FALLBACKS: ${DJANGO_SECRET_KEY_FALLBACKS:-}
     DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?DJANGO_ALLOWED_HOSTS muss gesetzt sein}
     CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?CSRF_TRUSTED_ORIGINS muss gesetzt sein}
     DB_NAME: ${DB_NAME:-tennisclub}
@@ -20,6 +21,7 @@ x-app: &app
     EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
     EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
     DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@tennisclub.local}
+    PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
 
 services:
   db:
@@ -103,20 +105,34 @@ services:
     depends_on:
       web:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect --timeout 5 --destination celery@$$HOSTNAME ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
 
   celery_beat:
     <<: *app
     restart: always
-    command: celery -A config beat -l info
+    command: celery -A config beat -l info --schedule /app/celerybeat/schedule --pidfile /tmp/celerybeat.pid
+    volumes:
+      - celery_beat_prod_data:/app/celerybeat
     depends_on:
       web:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/celerybeat.pid && kill -0 $$(cat /tmp/celerybeat.pid)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
   # Configure the tunnel's origin as http://nginx:80 (previously web:8000).
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
-    command: tunnel run
+    command: tunnel --metrics 0.0.0.0:2000 run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN muss gesetzt sein}
     depends_on:
@@ -128,3 +144,4 @@ volumes:
   redis_prod_data:
   static_prod_volume:
   media_prod_volume:
+  celery_beat_prod_data:

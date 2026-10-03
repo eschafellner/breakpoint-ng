@@ -1,10 +1,12 @@
 from django.conf import settings
+import nh3
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from apps.core.models import TimeStampedModel
+
 
 class Category(TimeStampedModel):
     name = models.CharField(_("Kategoriename"), max_length=100)
@@ -23,6 +25,7 @@ class Category(TimeStampedModel):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
+
 class Article(TimeStampedModel):
     class Visibility(models.TextChoices):
         PUBLIC = "PUBLIC", _("Öffentlich")
@@ -37,10 +40,14 @@ class Article(TimeStampedModel):
     slug = models.SlugField(_("Slug"), max_length=255, unique=True, blank=True)
     teaser = models.TextField(_("Teaser / Vorschautext"), blank=True)
     body = models.TextField(_("Inhalt (HTML)"))
-    
-    cover_image = models.ImageField(_("Titelbild"), upload_to="news/covers/", null=True, blank=True)
-    cover_image_alt = models.CharField(_("Alt-Text für Titelbild"), max_length=255, blank=True)
-    
+
+    cover_image = models.ImageField(
+        _("Titelbild"), upload_to="news/covers/", null=True, blank=True
+    )
+    cover_image_alt = models.CharField(
+        _("Alt-Text für Titelbild"), max_length=255, blank=True
+    )
+
     category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
@@ -80,11 +87,25 @@ class Article(TimeStampedModel):
     def __str__(self):
         return f"{self.title} [{self.get_status_display()}]"
 
+    @property
+    def safe_body(self):
+        """Also protect legacy articles written before save-time sanitizing."""
+        return nh3.clean(self.body or "")
+
     def clean(self):
-        if self.cover_image and not self.cover_image_alt:
-            raise ValidationError({"cover_image_alt": _("Ein Alt-Text ist für das Titelbild verpflichtend (Barrierefreiheit).")})
+        if self.cover_image and not self.cover_image_alt.strip():
+            raise ValidationError(
+                {
+                    "cover_image_alt": _(
+                        "Ein Alt-Text ist für das Titelbild verpflichtend (Barrierefreiheit)."
+                    )
+                }
+            )
 
     def save(self, *args, **kwargs):
+        self.body = nh3.clean(self.body or "")
+        if kwargs.get("update_fields") and "body" not in kwargs["update_fields"]:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"body"}
         if not self.slug:
             base_slug = slugify(self.title) or "artikel"
             candidate = base_slug
@@ -96,6 +117,7 @@ class Article(TimeStampedModel):
         self.clean()
         super().save(*args, **kwargs)
 
+
 class ArticleImage(TimeStampedModel):
     article = models.ForeignKey(
         Article,
@@ -104,8 +126,12 @@ class ArticleImage(TimeStampedModel):
         verbose_name=_("Artikel"),
     )
     image = models.ImageField(_("Originalbild (Groß)"), upload_to="news/gallery/large/")
-    image_medium = models.ImageField(_("Mittelgroßes Bild"), upload_to="news/gallery/medium/", blank=True)
-    image_thumb = models.ImageField(_("Vorschaubild (Thumbnail)"), upload_to="news/gallery/thumbs/", blank=True)
+    image_medium = models.ImageField(
+        _("Mittelgroßes Bild"), upload_to="news/gallery/medium/", blank=True
+    )
+    image_thumb = models.ImageField(
+        _("Vorschaubild (Thumbnail)"), upload_to="news/gallery/thumbs/", blank=True
+    )
     alt_text = models.CharField(_("Alt-Text"), max_length=255)
     caption = models.CharField(_("Bildunterschrift"), max_length=255, blank=True)
     order = models.PositiveIntegerField(_("Reihenfolge"), default=0)
@@ -117,7 +143,9 @@ class ArticleImage(TimeStampedModel):
 
     def clean(self):
         if not self.alt_text or not self.alt_text.strip():
-            raise ValidationError({"alt_text": _("Alt-Text ist Pflicht (Barrierefreiheit).")})
+            raise ValidationError(
+                {"alt_text": _("Alt-Text ist Pflicht (Barrierefreiheit).")}
+            )
 
     def __str__(self):
         return f"Bild zu {self.article.title} ({self.alt_text})"

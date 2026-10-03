@@ -27,6 +27,9 @@ dev = [
     "pytest-django>=4.8",
     "factory-boy>=3.3",
     "freezegun>=1.4",
+    "coverage>=7.0,<8",
+    "ruff>=0.14",
+    "black>=25.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,3 +39,6 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 include = ["apps*", "config*"]
+
+[tool.black]
+target-version = ["py312"]

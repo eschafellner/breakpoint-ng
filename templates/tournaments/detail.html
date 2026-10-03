@@ -63,6 +63,10 @@
                       {{ user_entry.get_status_display }}
                     </span>
                     <span style="font-size:.88rem;margin-left:8px;">Du bist für diesen Bewerb angemeldet.</span>
+                    {% if user_entry.status == 'PENDING_PARTNER' and user_entry.player2_id == user.id %}
+                      <form method="post" action="{% url 'tournaments:confirm_partner' user_entry.id %}">{% csrf_token %}<button type="submit" class="btn sm court">Teilnahme bestätigen</button></form>
+                    {% endif %}
+                    <form method="post" action="{% url 'tournaments:withdraw' user_entry.id %}">{% csrf_token %}<button type="submit" class="btn sm ghost">Anmeldung zurückziehen</button></form>
                   </div>
                 {% else %}
                   <form method="post" action="{% url 'tournaments:register' current_comp.id %}" style="display:flex;gap:10px;align-items:center;">
@@ -163,7 +167,19 @@
                           </div>
 
                           <!-- Staff / Tournament Director Result Entry Trigger -->
-                          {% if user.is_staff or user.groups.all %}
+                          {% if can_manage_tournaments %}
+                            {% if not m.winner %}
+                              <details style="padding:8px 10px;">
+                                <summary>Spieltermin planen</summary>
+                                <form method="post" action="{% url 'tournaments:schedule_match' m.id %}">
+                                  {% csrf_token %}
+                                  <label>Platz <select name="court_id" class="input" required>{% for court in available_courts %}<option value="{{ court.id }}" {% if m.scheduled_court_id == court.id %}selected{% endif %}>{{ court.name }}</option>{% endfor %}</select></label>
+                                  <label>Beginn <input type="datetime-local" name="start" class="input" value="{{ m.scheduled_start|date:'Y-m-d\TH:i' }}" required></label>
+                                  <label>Dauer in Minuten <input type="number" name="duration" class="input" min="1" value="90" required></label>
+                                  <button type="submit" class="btn sm court">Termin speichern</button>
+                                </form>
+                              </details>
+                            {% endif %}
                             {% if m.entry_a and m.entry_b and not m.winner %}
                               <div style="padding:6px 10px;background:#FBF8F3;border-top:1px solid var(--border);text-align:right;">
                                 <details style="display:inline-block;text-align:left;">

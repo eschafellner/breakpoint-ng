@@ -11,6 +11,7 @@ from .models import Charge, Payment
 from .services import record_payment, generate_membership_fees, export_charges_to_csv
 from .selectors import get_cashier_charges, get_billing_summary
 
+
 @login_required
 def cashier_dashboard_view(request):
     """Kassier-Dashboard: Übersicht aller Forderungen, Status-Filter, Beitragslauf-Trigger."""
@@ -36,6 +37,7 @@ def cashier_dashboard_view(request):
         },
     )
 
+
 @login_required
 def record_payment_view(request, charge_id):
     """Kassier erfasst Zahlung für eine Forderung."""
@@ -45,7 +47,9 @@ def record_payment_view(request, charge_id):
     charge = get_object_or_404(Charge, pk=charge_id)
 
     if request.method == "POST":
-        amount_raw = request.POST.get("amount", str(charge.open_amount)).replace(",", ".")
+        amount_raw = request.POST.get("amount", str(charge.open_amount)).replace(
+            ",", "."
+        )
         method = request.POST.get("method", Payment.Method.TRANSFER)
         reference = request.POST.get("reference", "")
 
@@ -61,12 +65,16 @@ def record_payment_view(request, charge_id):
             messages.success(
                 request,
                 _("Zahlung von %(amt)s € erfasst. Neuer Status: %(status)s.")
-                % {"amt": f"{payment.amount:.2f}", "status": charge.get_status_display()},
+                % {
+                    "amt": f"{payment.amount:.2f}",
+                    "status": charge.get_status_display(),
+                },
             )
         except Exception as e:
             messages.error(request, str(e))
 
     return redirect("billing:dashboard")
+
 
 @login_required
 def run_fees_view(request):
@@ -75,18 +83,26 @@ def run_fees_view(request):
         raise PermissionDenied(_("Zugriff nur für Kassier oder Administratoren."))
 
     if request.method == "POST":
-        year = int(request.POST.get("year", timezone.now().year))
-        month_raw = request.POST.get("month", "")
-        month = int(month_raw) if month_raw else None
-
-        created = generate_membership_fees(year=year, month=month)
-        messages.success(
-            request,
-            _("Beitragslauf für %(yr)s erfolgreich durchgeführt! %(cnt)d neue Forderungen erstellt.")
-            % {"yr": year, "cnt": len(created)},
-        )
+        try:
+            year = int(request.POST.get("year", timezone.localdate().year))
+            month_raw = request.POST.get("month", "")
+            month = int(month_raw) if month_raw else None
+            created = generate_membership_fees(year=year, month=month)
+            messages.success(
+                request,
+                _(
+                    "Beitragslauf für %(yr)s erfolgreich durchgeführt! %(cnt)d neue Forderungen erstellt."
+                )
+                % {"yr": year, "cnt": len(created)},
+            )
+        except ValueError:
+            messages.error(
+                request,
+                _("Bitte gib ein gültiges Jahr und einen Monat zwischen 1 und 12 an."),
+            )
 
     return redirect("billing:dashboard")
+
 
 @login_required
 def export_csv_view(request):

@@ -10,7 +10,7 @@
     <p>{{ club_settings.tagline }}</p>
     <div class="actions">
       <a href="{% url 'courts:calendar' %}" class="btn court">Platz buchen</a>
-      {% if not user.is_authenticated or user.account_type != 'MEMBER' %}
+      {% if not user.is_member %}
         <a href="{% url 'accounts:register' %}" class="btn ghost">Mitglied werden</a>
       {% endif %}
     </div>

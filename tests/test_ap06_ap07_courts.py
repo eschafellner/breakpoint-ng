@@ -4,16 +4,26 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core import mail
 from django.utils import timezone
-from apps.accounts.models import User
-from apps.billing.models import Charge, PriceRule, BookingExtra
-from apps.courts.models import Court, Booking, Blocking
+from apps.billing.models import Charge, BookingExtra
+from apps.courts.models import Booking, Blocking
 from apps.courts.services import create_booking, create_blocking, cancel_booking
 from apps.courts.selectors import get_court_slots_for_day
 
+
+def future_slot(days=1):
+    return timezone.make_aware(
+        timezone.datetime.combine(
+            timezone.localdate() + timedelta(days=days), timezone.datetime.min.time()
+        )
+    ) + timedelta(hours=10)
+
+
 @pytest.mark.django_db
-def test_blocking_cancels_overlapping_bookings_and_notifies(court_sand, member_user, admin_user):
+def test_blocking_cancels_overlapping_bookings_and_notifies(
+    court_sand, member_user, admin_user, django_capture_on_commit_callbacks
+):
     """AP-06: Neue Sperre über bestehende Buchungen: storniert sie und sendet E-Mail an Buchende."""
-    start = timezone.now() + timedelta(days=1, hours=2)
+    start = future_slot()
     end = start + timedelta(hours=1)
 
     # Member books slot
@@ -30,15 +40,16 @@ def test_blocking_cancels_overlapping_bookings_and_notifies(court_sand, member_u
     blocking_start = start - timedelta(minutes=30)
     blocking_end = end + timedelta(minutes=30)
 
-    blocking, cancelled = create_blocking(
-        court=court_sand,
-        start=blocking_start,
-        end=blocking_end,
-        reason=Blocking.Reason.WEATHER,
-        note="Starkregen / Unbespielbar",
-        created_by=admin_user,
-        cancel_overlapping=True,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        blocking, cancelled = create_blocking(
+            court=court_sand,
+            start=blocking_start,
+            end=blocking_end,
+            reason=Blocking.Reason.WEATHER,
+            note="Starkregen / Unbespielbar",
+            created_by=admin_user,
+            cancel_overlapping=True,
+        )
 
     assert len(cancelled) == 1
     booking.refresh_from_db()
@@ -46,10 +57,11 @@ def test_blocking_cancels_overlapping_bookings_and_notifies(court_sand, member_u
     assert len(mail.outbox) >= 1
     assert "storniert" in mail.outbox[0].subject.lower()
 
+
 @pytest.mark.django_db
 def test_member_books_with_member_zero_charge(court_sand, member_user, member_user2):
     """AP-07: Mitglied bucht Slot mit einem Mitglied als Mitspieler -> Preis 0 €, keine Forderung."""
-    start = timezone.now() + timedelta(days=2, hours=1)
+    start = future_slot(2)
     end = start + timedelta(hours=1)
 
     booking = create_booking(
@@ -62,10 +74,11 @@ def test_member_books_with_member_zero_charge(court_sand, member_user, member_us
     assert booking.total_price == Decimal("0.00")
     assert not Charge.objects.filter(object_id=booking.id).exists()
 
+
 @pytest.mark.django_db
 def test_member_books_with_guest_creates_guest_fee_charge(court_sand, member_user):
     """AP-07: Mitglied bucht mit einem Gast -> Forderung GUEST_FEE gemäß Preisregel."""
-    start = timezone.now() + timedelta(days=2, hours=2)
+    start = future_slot(2)
     end = start + timedelta(hours=1)
 
     booking = create_booking(
@@ -82,10 +95,11 @@ def test_member_books_with_guest_creates_guest_fee_charge(court_sand, member_use
     assert chg.amount == Decimal("5.00")
     assert chg.user == member_user
 
+
 @pytest.mark.django_db
 def test_guest_booking_creates_court_fee_charge(court_sand, guest_user):
     """AP-07: Gast bucht -> Forderung COURT_FEE gemäß Gastpreis."""
-    start = timezone.now() + timedelta(days=1, hours=3)
+    start = future_slot()
     end = start + timedelta(hours=1)
 
     booking = create_booking(
@@ -101,6 +115,7 @@ def test_guest_booking_creates_court_fee_charge(court_sand, guest_user):
     assert chg.amount == Decimal("15.00")
     assert chg.user == guest_user
 
+
 @pytest.mark.django_db
 def test_extras_automatic_and_optional_calculation(court_halle, member_user):
     """AP-07: Halle automatisch berechnet, Flutlicht nur bei Auswahl; Preise eingefroren."""
@@ -114,7 +129,7 @@ def test_extras_automatic_and_optional_calculation(court_halle, member_user):
         is_active=True,
     )
 
-    start = timezone.now() + timedelta(days=1, hours=4)
+    start = future_slot()
     end = start + timedelta(hours=1)
 
     # Member books Halle with Flutlicht selected:
@@ -138,10 +153,11 @@ def test_extras_automatic_and_optional_calculation(court_halle, member_user):
     light_line = booking.extra_lines.get(extra=extra_light)
     assert light_line.unit_price == Decimal("4.00")
 
+
 @pytest.mark.django_db
 def test_concurrency_collision_prevention(court_sand, member_user, member_user2):
     """AP-07: Zwei gleichzeitige Buchungsversuche auf denselben Slot -> genau einer erfolgreich."""
-    start = timezone.now() + timedelta(days=2, hours=5)
+    start = future_slot(2)
     end = start + timedelta(hours=1)
 
     # First booking succeeds
@@ -151,6 +167,7 @@ def test_concurrency_collision_prevention(court_sand, member_user, member_user2)
     # Second overlapping booking must fail
     with pytest.raises(ValidationError):
         create_booking(court=court_sand, booked_by=member_user2, start=start, end=end)
+
 
 @pytest.mark.django_db
 def test_booking_rules_enforcement(court_sand, member_user, club_settings):
@@ -175,13 +192,16 @@ def test_booking_rules_enforcement(court_sand, member_user, club_settings):
             end=now + timedelta(days=1, hours=3),  # 180 min
         )
 
+
 @pytest.mark.django_db
 def test_timely_cancellation_cancels_charge(court_sand, guest_user, club_settings):
     """AP-07: Stornierung innerhalb der Frist storniert Forderung; danach bleibt sie bestehen."""
-    start = timezone.now() + timedelta(hours=10)  # > 4 hours free cancel window
+    start = future_slot()  # > 4 hours free cancel window
     end = start + timedelta(hours=1)
 
-    booking = create_booking(court=court_sand, booked_by=guest_user, start=start, end=end)
+    booking = create_booking(
+        court=court_sand, booked_by=guest_user, start=start, end=end
+    )
     chg = Charge.objects.get(object_id=booking.id)
     assert chg.status == Charge.Status.OPEN
 
@@ -191,11 +211,14 @@ def test_timely_cancellation_cancels_charge(court_sand, guest_user, club_setting
     assert booking.status == Booking.Status.CANCELLED
     assert chg.status == Charge.Status.CANCELLED
 
+
 @pytest.mark.django_db
 def test_public_view_shows_no_names(court_sand, member_user):
     """AP-07 / P-11: Öffentliche Belegungsansicht ohne Namen („Belegt“)."""
     target_day = timezone.now().date() + timedelta(days=1)
-    start = timezone.make_aware(timezone.datetime.combine(target_day, timezone.datetime.min.time())) + timedelta(hours=10)
+    start = timezone.make_aware(
+        timezone.datetime.combine(target_day, timezone.datetime.min.time())
+    ) + timedelta(hours=10)
     end = start + timedelta(hours=1)
 
     create_booking(court=court_sand, booked_by=member_user, start=start, end=end)

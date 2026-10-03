@@ -98,12 +98,12 @@ Webseite aufrufen unter: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ## 🧪 Tests ausführen
 
-Die gesamte Geschäftslogik, Sicherheitsregeln, Berechtigungen und Buchungsabläufe sind mit einer umfassenden Pytest-Testsuite abgedeckt:
+Die Pytest-Suite prüft Geschäftslogik, Berechtigungen und Buchungsabläufe mit positiven Fällen und gezielten Negativtests:
 
 ```bash
 pytest
 ```
-Alle 42 Akzeptanzkriterien-Tests laufen grün durch.
+Die Tests umfassen die 42 ursprünglichen Akzeptanztests sowie Regressionen zu Anmeldung, Mitgliedschaften, Zahlungen, Buchungen, Turnieren, Migrationen und Deployment. Echte Nginx-HTTP-Tests benötigen Nginx (`NGINX_BINARY`), die Preisvorschau-Prüfung Node.js. Sieben Paralleltests benötigen PostgreSQL und werden unter SQLite übersprungen. GitHub Actions enthält beide Datenbankläufe. Prüfstand und Grenzen: [CODE_PRUEFUNG.md](CODE_PRUEFUNG.md).
 
 ---
 
@@ -131,6 +131,8 @@ nicht automatisch setzen.
 - Es gibt ein Wartungsfenster während Migrationen und Containerwechsel.
 - Ein `docker compose restart` übernimmt keinen neuen Anwendungscode.
 - Ausführliche Deployment- und Diagnoseanleitung: [DEPLOYMENT.md](DEPLOYMENT.md).
-- Datenbank-Backup: `./scripts/backup.sh`
-- Backup wiederherstellen: `./scripts/restore.sh backups/<backup-datei>.sql.gz`
+- Backup von DB und Docker-Medien: `bash scripts/backup.sh`; beim Deployment erfolgt es vor Migrationen automatisch.
+- Backup wiederherstellen: `bash scripts/restore.sh backups/<db-datei>.sql.gz backups/<media-datei>.tar.gz` (Anwendungsdienste vorher stoppen).
+- Aktueller Prüfstand und Betriebsprüfungen: [DEPLOYMENT_PRUEFUNG.md](DEPLOYMENT_PRUEFUNG.md).
+- SEPA-IBANs werden verschlüsselt gespeichert. Den vorhandenen `DJANGO_SECRET_KEY` samt benötigten alten Schlüsseln getrennt vom DB-Backup sichern; Rotation siehe [DEPLOYMENT.md](DEPLOYMENT.md).
 - Ausführliche Anleitung für den Vorstand: siehe [ADMIN_HANDBUCH.md](ADMIN_HANDBUCH.md).

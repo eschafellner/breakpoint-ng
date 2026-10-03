@@ -10,7 +10,7 @@
         Wir haben einen Bestätigungslink an <b>{{ user.email }}</b> gesendet.<br>
         Bitte klicke auf den Link in der E-Mail, um dein Konto zu aktivieren.
       </p>
-      {% if user.account_type == 'MEMBER' %}
+      {% if membership_requested %}
         <div class="alert info" style="text-align:left;margin-top:20px;">
           ℹ️ Dein Mitgliedsantrag wurde an den Vorstand weitergeleitet. Sobald dieser geprüft und genehmigt wurde, erhältst du eine weitere Bestätigung.
         </div>

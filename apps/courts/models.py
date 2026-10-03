@@ -2,9 +2,9 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from apps.core.models import TimeStampedModel
+
 
 class Court(TimeStampedModel):
     class Surface(models.TextChoices):
@@ -34,6 +34,7 @@ class Court(TimeStampedModel):
         type_str = _("Halle") if self.is_indoor else self.get_surface_display()
         return f"{self.name} ({type_str})"
 
+
 class Season(TimeStampedModel):
     name = models.CharField(_("Saisonname"), max_length=100)
     start_date = models.DateField(_("Saisonbeginn"))
@@ -46,6 +47,13 @@ class Season(TimeStampedModel):
 
     def __str__(self):
         return f"{self.name} ({self.start_date:%d.%m.%Y} - {self.end_date:%d.%m.%Y})"
+
+    def clean(self):
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError(
+                {"end_date": _("Das Saisonende muss nach dem Beginn liegen.")}
+            )
+
 
 class OpeningHours(TimeStampedModel):
     WEEKDAYS = (
@@ -84,6 +92,17 @@ class OpeningHours(TimeStampedModel):
 
     def __str__(self):
         return f"{self.court.name} - {self.get_weekday_display()}: {self.open_time:%H:%M} - {self.close_time:%H:%M}"
+
+    def clean(self):
+        if not self.slot_minutes or self.slot_minutes < 0:
+            raise ValidationError(
+                {"slot_minutes": _("Die Slot-Dauer muss größer als null sein.")}
+            )
+        if self.open_time and self.close_time and self.open_time >= self.close_time:
+            raise ValidationError(
+                {"close_time": _("Die Schließzeit muss nach der Öffnung liegen.")}
+            )
+
 
 class Blocking(TimeStampedModel):
     class Reason(models.TextChoices):
@@ -129,6 +148,7 @@ class Blocking(TimeStampedModel):
     def __str__(self):
         return f"Sperre: {self.court.name} ({self.get_reason_display()}) {self.start:%d.%m. %H:%M}–{self.end:%H:%M}"
 
+
 class Booking(TimeStampedModel):
     class Status(models.TextChoices):
         CONFIRMED = "CONFIRMED", _("Bestätigt")
@@ -155,6 +175,9 @@ class Booking(TimeStampedModel):
         default=Status.CONFIRMED,
     )
     cancelled_at = models.DateTimeField(_("Storniert am"), null=True, blank=True)
+    reminder_sent_at = models.DateTimeField(
+        _("Erinnerung versendet am"), null=True, blank=True, editable=False
+    )
     total_price = models.DecimalField(
         _("Gesamtpreis (€)"),
         max_digits=10,
@@ -178,6 +201,7 @@ class Booking(TimeStampedModel):
     def duration_minutes(self) -> int:
         return int((self.end - self.start).total_seconds() / 60)
 
+
 class BookingParticipant(TimeStampedModel):
     booking = models.ForeignKey(
         Booking,
@@ -193,7 +217,9 @@ class BookingParticipant(TimeStampedModel):
         related_name="participations",
         verbose_name=_("Benutzer"),
     )
-    guest_name = models.CharField(_("Gastname (falls kein Benutzerkonto)"), max_length=100, blank=True)
+    guest_name = models.CharField(
+        _("Gastname (falls kein Benutzerkonto)"), max_length=100, blank=True
+    )
     is_guest = models.BooleanField(_("Ist Gast"), default=False)
 
     class Meta:

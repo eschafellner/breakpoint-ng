@@ -4,6 +4,8 @@ from django.db import models
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from apps.core.models import TimeStampedModel
+from django.core.exceptions import ValidationError
+
 
 class Tournament(TimeStampedModel):
     class Eligibility(models.TextChoices):
@@ -61,6 +63,19 @@ class Tournament(TimeStampedModel):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
+    def clean(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError(
+                {"end_date": _("Das Turnierende muss nach dem Beginn liegen.")}
+            )
+        for field in ("fee_member", "fee_guest"):
+            value = getattr(self, field)
+            if value is not None and Decimal(value) < 0:
+                raise ValidationError(
+                    {field: _("Startgebühren dürfen nicht negativ sein.")}
+                )
+
+
 class Competition(TimeStampedModel):
     class Discipline(models.TextChoices):
         SINGLES = "SINGLES", _("Einzel")
@@ -101,6 +116,13 @@ class Competition(TimeStampedModel):
 
     def __str__(self):
         return f"{self.tournament.name} - {self.name} ({self.get_discipline_display()})"
+
+    def clean(self):
+        if not self.max_entries:
+            raise ValidationError(
+                {"max_entries": _("Die Teilnehmerkapazität muss größer als null sein.")}
+            )
+
 
 class Entry(TimeStampedModel):
     class Status(models.TextChoices):
@@ -153,6 +175,7 @@ class Entry(TimeStampedModel):
             return f"{self.player1.last_name} / {self.player2.last_name}"
         return f"{self.player1.last_name} {self.player1.first_name[:1]}."
 
+
 class Match(TimeStampedModel):
     class ResultType(models.TextChoices):
         NORMAL = "NORMAL", _("Regulär beendet")
@@ -167,7 +190,7 @@ class Match(TimeStampedModel):
     )
     round = models.PositiveIntegerField(_("Runde"), default=1)
     position = models.PositiveIntegerField(_("Position im Raster"), default=1)
-    
+
     entry_a = models.ForeignKey(
         Entry,
         on_delete=models.SET_NULL,
@@ -239,7 +262,10 @@ class Match(TimeStampedModel):
         """Format score list e.g. '6:4, 7:6'."""
         if not self.score:
             return ""
-        return ", ".join([f"{s.get('a')}:{s.get('b')}" for s in self.score if isinstance(s, dict)])
+        return ", ".join(
+            [f"{s.get('a')}:{s.get('b')}" for s in self.score if isinstance(s, dict)]
+        )
+
 
 class HonorRollEntry(TimeStampedModel):
     year = models.PositiveIntegerField(_("Jahr"))

@@ -1,12 +1,14 @@
 import csv
 import io
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Optional, List, Any
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.core.exceptions import PermissionDenied
+from apps.accounts.permissions import is_cashier
 from apps.accounts.models import User
 from apps.core.models import ClubSettings
 from apps.core.services import log_audit
@@ -14,11 +16,20 @@ from .models import Charge, Payment
 
 CENT = Decimal("0.01")
 
+
 def quantize_amount(val: Any) -> Decimal:
     """Safely convert any numeric value to quantized 2-decimal Decimal."""
-    if not isinstance(val, Decimal):
+    try:
         val = Decimal(str(val))
-    return val.quantize(CENT, rounding=ROUND_HALF_UP)
+        if not val.is_finite():
+            raise ValueError(_("Ungültiger Geldbetrag."))
+        result = val.quantize(CENT, rounding=ROUND_HALF_UP)
+        if abs(result) >= Decimal("100000000"):
+            raise ValueError(_("Geldbetrag überschreitet den zulässigen Bereich."))
+        return result
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError(_("Ungültiger Geldbetrag.")) from exc
+
 
 @transaction.atomic
 def create_charge(
@@ -39,6 +50,10 @@ def create_charge(
     amount = quantize_amount(amount)
     if amount <= Decimal("0.00"):
         raise ValueError(_("Der Forderungsbetrag muss größer als 0 sein."))
+    if kind not in Charge.Kind.values:
+        raise ValueError(_("Ungültige Forderungsart."))
+    if period_start and period_end and period_start > period_end:
+        raise ValueError(_("Ungültiger Abrechnungszeitraum."))
 
     content_type = ContentType.objects.get_for_model(source) if source else None
     object_id = getattr(source, "pk", None) if source else None
@@ -71,6 +86,7 @@ def create_charge(
 
     return charge
 
+
 @transaction.atomic
 def record_payment(
     *,
@@ -85,9 +101,16 @@ def record_payment(
     amount = quantize_amount(amount)
     if amount <= Decimal("0.00"):
         raise ValueError(_("Der Zahlungsbetrag muss größer als 0 sein."))
+    current = Charge.objects.select_for_update().get(pk=charge.pk)
+    if current.status not in (Charge.Status.OPEN, Charge.Status.PARTIAL):
+        raise ValueError(_("Diese Forderung kann nicht mehr bezahlt werden."))
+    if method not in Payment.Method.values:
+        raise ValueError(_("Ungültige Zahlungsmethode."))
+    if amount > current.open_amount:
+        raise ValueError(_("Die Zahlung überschreitet den offenen Betrag."))
 
     payment = Payment.objects.create(
-        charge=charge,
+        charge=current,
         amount=amount,
         method=method,
         recorded_by=recorded_by,
@@ -95,14 +118,15 @@ def record_payment(
         paid_at=paid_at or timezone.now(),
     )
 
-    total_paid = charge.total_paid
-    if total_paid >= charge.amount:
-        charge.status = Charge.Status.PAID
+    total_paid = current.total_paid
+    if total_paid >= current.amount:
+        current.status = Charge.Status.PAID
     elif total_paid > Decimal("0.00"):
-        charge.status = Charge.Status.PARTIAL
+        current.status = Charge.Status.PARTIAL
     else:
-        charge.status = Charge.Status.OPEN
-    charge.save(update_fields=["status"])
+        current.status = Charge.Status.OPEN
+    current.save(update_fields=["status"])
+    charge.status = current.status
 
     log_audit(
         user=recorded_by,
@@ -118,10 +142,13 @@ def record_payment(
 
     return payment
 
+
 @transaction.atomic
 def cancel_charge(charge: Charge, reason: str = "") -> None:
     """Cancel a charge (e.g. upon timely court booking cancellation)."""
-    if charge.status in [Charge.Status.PAID, Charge.Status.PARTIAL]:
+    current = Charge.objects.select_for_update().get(pk=charge.pk)
+    charge.status = current.status
+    if current.status != Charge.Status.OPEN or current.total_paid > 0:
         return  # Cannot cancel already partially/fully paid charge directly
     charge.status = Charge.Status.CANCELLED
     charge.save(update_fields=["status"])
@@ -132,6 +159,7 @@ def cancel_charge(charge: Charge, reason: str = "") -> None:
         changes={"reason": reason},
     )
 
+
 @transaction.atomic
 def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[Charge]:
     """
@@ -141,8 +169,22 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
     - Prorated calculation for new members joining mid-year if enabled in ClubSettings.
     """
     from apps.members.models import Membership, MembershipType
+
+    if (
+        type(year) is not int
+        or not 1 <= year <= 9999
+        or (month is not None and (type(month) is not int or not 1 <= month <= 12))
+    ):
+        raise ValueError(_("Ungültiges Jahr oder ungültiger Monat."))
     settings_obj = ClubSettings.get_settings()
     created_charges = []
+    # A deterministic lock order also covers simultaneous yearly/monthly runs.
+    user_ids = (
+        Membership.objects.filter(status=Membership.Status.ACTIVE)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    list(User.objects.select_for_update().filter(pk__in=user_ids).order_by("pk"))
 
     # Process yearly memberships
     if month is None:
@@ -150,10 +192,18 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
         period_end = date(year, 12, 31)
         due_date = date(year, 1, 15)
 
-        yearly_memberships = Membership.objects.filter(
-            status=Membership.Status.ACTIVE,
-            type__billing_interval=MembershipType.BillingInterval.YEARLY,
-        ).select_related("user", "type")
+        yearly_memberships = (
+            Membership.objects.filter(
+                status=Membership.Status.ACTIVE,
+                type__billing_interval=MembershipType.BillingInterval.YEARLY,
+                start_date__lte=period_end,
+            )
+            .filter(
+                models.Q(end_date__isnull=True) | models.Q(end_date__gte=period_start)
+            )
+            .select_related("user", "type")
+            .order_by("user_id", "pk")
+        )
 
         for mem in yearly_memberships:
             # Idempotency check: does a charge for this user & year already exist?
@@ -181,7 +231,7 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
                 user=mem.user,
                 kind=Charge.Kind.MEMBERSHIP_FEE,
                 amount=fee,
-                due_date=due_date,
+                due_date=max(due_date, mem.start_date),
                 period_start=period_start,
                 period_end=period_end,
                 description=f"Mitgliedsbeitrag {mem.type.name} {year}",
@@ -190,16 +240,21 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
             created_charges.append(chg)
 
     # Process monthly memberships
-    monthly_memberships = Membership.objects.filter(
-        status=Membership.Status.ACTIVE,
-        type__billing_interval=MembershipType.BillingInterval.MONTHLY,
-    ).select_related("user", "type")
+    monthly_memberships = (
+        Membership.objects.filter(
+            status=Membership.Status.ACTIVE,
+            type__billing_interval=MembershipType.BillingInterval.MONTHLY,
+        )
+        .select_related("user", "type")
+        .order_by("user_id", "pk")
+    )
 
     target_months = [month] if month is not None else list(range(1, 13))
 
     for m in target_months:
         import calendar
-        _, last_day = calendar.monthrange(year, m)
+
+        weekday, last_day = calendar.monthrange(year, m)
         m_start = date(year, m, 1)
         m_end = date(year, m, last_day)
         due = date(year, m, 5)
@@ -220,6 +275,8 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
                 continue
 
             fee = mem.type.fee_amount
+            if fee <= 0:
+                continue
             chg = create_charge(
                 user=mem.user,
                 kind=Charge.Kind.MEMBERSHIP_FEE,
@@ -234,16 +291,52 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
 
     return created_charges
 
+
+@transaction.atomic
+def waive_charge(*, charge: Charge, actor: User, reason: str):
+    if not is_cashier(actor):
+        raise PermissionDenied(
+            _("Nur Kassier oder Administrator dürfen Forderungen erlassen.")
+        )
+    if not reason.strip():
+        raise ValueError(_("Eine Begründung für den Erlass ist erforderlich."))
+    current = Charge.objects.select_for_update().get(pk=charge.pk)
+    if current.status != Charge.Status.OPEN or current.total_paid > 0:
+        raise ValueError(
+            _("Nur offene, unbezahlte Forderungen können erlassen werden.")
+        )
+    current.status = Charge.Status.WAIVED
+    current.save(update_fields=["status"])
+    charge.status = current.status
+    log_audit(
+        user=actor,
+        action="WAIVE_CHARGE",
+        entity_type="Charge",
+        entity_id=current.pk,
+        changes={"reason": reason.strip()},
+    )
+
+
 def export_charges_to_csv(charges) -> str:
     """Export charges to standard CSV format."""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "ID", "Mitglied/Nutzer", "E-Mail", "Art", "Betrag (€)",
-        "Fälligkeit", "Status", "Bezahlt (€)", "Offen (€)", "Beschreibung"
-    ])
+    writer.writerow(
+        [
+            "ID",
+            "Mitglied/Nutzer",
+            "E-Mail",
+            "Art",
+            "Betrag (€)",
+            "Fälligkeit",
+            "Status",
+            "Bezahlt (€)",
+            "Offen (€)",
+            "Beschreibung",
+        ]
+    )
     for c in charges:
-        writer.writerow([
+        values = [
             c.pk,
             c.user.get_full_name() or c.user.email,
             c.user.email,
@@ -254,5 +347,16 @@ def export_charges_to_csv(charges) -> str:
             f"{c.total_paid:.2f}",
             f"{c.open_amount:.2f}",
             c.description,
-        ])
+        ]
+        writer.writerow(
+            [
+                (
+                    "'" + value
+                    if isinstance(value, str)
+                    and value.lstrip().startswith(("=", "+", "-", "@"))
+                    else value
+                )
+                for value in values
+            ]
+        )
     return output.getvalue()

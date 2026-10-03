@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from apps.accounts.models import User
 from apps.billing.models import Charge
-from apps.courts.models import Court, Booking
+from apps.courts.models import Booking
 from apps.tournaments.models import Tournament, Competition, Entry, Match
 from apps.tournaments.services import (
     register_for_competition,
@@ -20,6 +20,7 @@ from apps.tournaments.services import (
     calculate_round_robin_standings,
 )
 
+
 @pytest.fixture
 def open_tournament(db):
     now = timezone.now()
@@ -33,6 +34,7 @@ def open_tournament(db):
         fee_guest=Decimal("30.00"),
         status=Tournament.Status.OPEN,
     )
+
 
 @pytest.mark.django_db
 def test_guest_registration_eligibility_enforced(open_tournament, guest_user):
@@ -58,6 +60,7 @@ def test_guest_registration_eligibility_enforced(open_tournament, guest_user):
     assert chg.amount == Decimal("30.00")
     assert chg.kind == Charge.Kind.TOURNAMENT_FEE
 
+
 @pytest.mark.django_db
 def test_doubles_partner_confirmation(open_tournament, member_user, member_user2):
     """AP-08: Doppelanmeldung erfordert Bestätigung durch Partner."""
@@ -80,6 +83,7 @@ def test_doubles_partner_confirmation(open_tournament, member_user, member_user2
     entry.refresh_from_db()
     assert entry.status == Entry.Status.CONFIRMED
 
+
 @pytest.mark.django_db
 def test_waitlist_and_withdrawal_promotion(open_tournament, member_user):
     """AP-08: Bei Erreichen von max_entries -> Warteliste; Abmeldung rückt nächsten nach."""
@@ -91,8 +95,27 @@ def test_waitlist_and_withdrawal_promotion(open_tournament, member_user):
     )
 
     u1 = member_user
-    u2 = User.objects.create_user(email="u2@test.at", password="p", account_type=User.AccountType.MEMBER)
-    u3 = User.objects.create_user(email="u3@test.at", password="p", account_type=User.AccountType.MEMBER)
+    u2 = User.objects.create_user(
+        email="u2@test.at",
+        password="p",
+        account_type=User.AccountType.MEMBER,
+        email_verified=True,
+    )
+    u3 = User.objects.create_user(
+        email="u3@test.at",
+        password="p",
+        account_type=User.AccountType.MEMBER,
+        email_verified=True,
+    )
+    from apps.members.models import Membership
+
+    for index, user in enumerate([u2, u3], start=2):
+        Membership.objects.create(
+            user=user,
+            type=member_user.memberships.get().type,
+            member_number=f"TCM-{index:04d}",
+            start_date=timezone.localdate(),
+        )
 
     e1 = register_for_competition(competition=comp, player1=u1)
     e2 = register_for_competition(competition=comp, player1=u2)
@@ -108,6 +131,7 @@ def test_waitlist_and_withdrawal_promotion(open_tournament, member_user):
     e3.refresh_from_db()
     assert e1.status == Entry.Status.WITHDRAWN
     assert e3.status == Entry.Status.CONFIRMED
+
 
 @pytest.mark.django_db
 def test_knockout_draw_11_players_16_bracket_seeds_and_byes(open_tournament):
@@ -127,9 +151,13 @@ def test_knockout_draw_11_players_16_bracket_seeds_and_byes(open_tournament):
     # Create 11 confirmed entries with Seed 1 and Seed 2
     entries = []
     for i in range(1, 12):
-        u = User.objects.create_user(email=f"p{i}@test.at", password="p", account_type=User.AccountType.MEMBER)
+        u = User.objects.create_user(
+            email=f"p{i}@test.at", password="p", account_type=User.AccountType.MEMBER
+        )
         seed = 1 if i == 1 else (2 if i == 2 else None)
-        e = Entry.objects.create(competition=comp, player1=u, seed=seed, status=Entry.Status.CONFIRMED)
+        e = Entry.objects.create(
+            competition=comp, player1=u, seed=seed, status=Entry.Status.CONFIRMED
+        )
         entries.append(e)
 
     matches = generate_knockout_draw(comp)
@@ -152,6 +180,7 @@ def test_knockout_draw_11_players_16_bracket_seeds_and_byes(open_tournament):
     bye_matches = [m for m in round_1_matches if m.winner is not None]
     assert len(bye_matches) == 5
 
+
 @pytest.mark.django_db
 def test_round_robin_5_players_10_matches_and_standings(open_tournament):
     """
@@ -169,8 +198,15 @@ def test_round_robin_5_players_10_matches_and_standings(open_tournament):
 
     entries = []
     for i in range(1, 6):
-        u = User.objects.create_user(email=f"rr{i}@test.at", password="p", first_name=f"Spieler {i}", account_type=User.AccountType.MEMBER)
-        e = Entry.objects.create(competition=comp, player1=u, status=Entry.Status.CONFIRMED)
+        u = User.objects.create_user(
+            email=f"rr{i}@test.at",
+            password="p",
+            first_name=f"Spieler {i}",
+            account_type=User.AccountType.MEMBER,
+        )
+        e = Entry.objects.create(
+            competition=comp, player1=u, status=Entry.Status.CONFIRMED
+        )
         entries.append(e)
 
     matches = generate_round_robin_draw(comp)
@@ -193,6 +229,7 @@ def test_round_robin_5_players_10_matches_and_standings(open_tournament):
     assert leader["set_diff"] == 2
     assert leader["game_diff"] == 5
 
+
 @pytest.mark.django_db
 def test_tennis_score_validation():
     """AP-09: Ergebniseingabe validiert Tennis-Ergebnisse (z. B. 6:4, 7:6, MTB 10:8; 6:5 ungültig)."""
@@ -211,20 +248,35 @@ def test_tennis_score_validation():
     invalid, err = validate_tennis_score([{"a": 6, "b": 5}, {"a": 6, "b": 4}])
     assert invalid is False
 
+
 @pytest.mark.django_db
-def test_schedule_match_creates_blocking_and_detects_conflict(open_tournament, court_sand, member_user):
+def test_schedule_match_creates_blocking_and_detects_conflict(
+    open_tournament, court_sand, member_user
+):
     """
     AP-09:
     - Zuweisung von Platz/Zeit erzeugt Blocking in der Platzbuchung.
     - Konflikt mit bestehender Buchung wird gemeldet.
     """
-    comp = Competition.objects.create(tournament=open_tournament, name="Einzel", discipline=Competition.Discipline.SINGLES)
+    comp = Competition.objects.create(
+        tournament=open_tournament,
+        name="Einzel",
+        discipline=Competition.Discipline.SINGLES,
+    )
     u1 = member_user
-    u2 = User.objects.create_user(email="gegner@test.at", password="p", account_type=User.AccountType.MEMBER)
-    e1 = Entry.objects.create(competition=comp, player1=u1, status=Entry.Status.CONFIRMED)
-    e2 = Entry.objects.create(competition=comp, player1=u2, status=Entry.Status.CONFIRMED)
+    u2 = User.objects.create_user(
+        email="gegner@test.at", password="p", account_type=User.AccountType.MEMBER
+    )
+    e1 = Entry.objects.create(
+        competition=comp, player1=u1, status=Entry.Status.CONFIRMED
+    )
+    e2 = Entry.objects.create(
+        competition=comp, player1=u2, status=Entry.Status.CONFIRMED
+    )
 
-    match = Match.objects.create(competition=comp, round=1, position=1, entry_a=e1, entry_b=e2)
+    match = Match.objects.create(
+        competition=comp, round=1, position=1, entry_a=e1, entry_b=e2
+    )
 
     start = timezone.now() + timedelta(days=2, hours=10)
 
@@ -243,7 +295,9 @@ def test_schedule_match_creates_blocking_and_detects_conflict(open_tournament, c
 
     # 2. Rescheduling without conflict succeeds and creates Blocking
     clear_start = timezone.now() + timedelta(days=3, hours=14)
-    blocking = schedule_tournament_match(match=match, court=court_sand, start_dt=clear_start)
+    blocking = schedule_tournament_match(
+        match=match, court=court_sand, start_dt=clear_start
+    )
     assert blocking.pk is not None
     assert blocking.court == court_sand
     assert match.blocking == blocking

@@ -34,12 +34,16 @@
       <a href="{% url 'news:list' %}">News</a>
       <a href="{% url 'courts:calendar' %}">Platzbuchung</a>
       <a href="{% url 'tournaments:list' %}">Turniere</a>
-      {% if user.is_authenticated and user.account_type == 'MEMBER' %}
+      {% if user.is_member %}
         <a href="{% url 'members:directory' %}">Mitglieder</a>
       {% endif %}
-      {% if user.is_staff or user.is_superuser %}
+      {% if can_manage_members %}
         <a href="{% url 'members:applications' %}">Anträge</a>
+      {% endif %}
+      {% if can_access_billing %}
         <a href="{% url 'billing:dashboard' %}">Kassier</a>
+      {% endif %}
+      {% if user.is_staff %}
         <a href="/admin/">Admin</a>
       {% endif %}
       <a href="{% url 'core:styleguide' %}">Styleguide</a>
@@ -49,7 +53,9 @@
           <span class="avatar" aria-hidden="true">{{ user.get_initials }}</span>
           {{ user.first_name|default:user.email }}
         </a>
-        <a href="{% url 'accounts:logout' %}" class="btn sm ghost" style="margin-left:8px;">Abmelden</a>
+        <form method="post" action="{% url 'accounts:logout' %}" style="margin-left:8px;">
+          {% csrf_token %}<button type="submit" class="btn sm ghost">Abmelden</button>
+        </form>
       {% else %}
         <a href="{% url 'accounts:login' %}" class="btn sm ghost" style="margin-left:8px;">Anmelden</a>
         <a href="{% url 'accounts:register' %}" class="btn sm" style="margin-left:4px;">Registrieren</a>

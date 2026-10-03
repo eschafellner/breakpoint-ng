@@ -30,7 +30,7 @@
     {% endif %}
 
     <div class="card" style="padding:32px 36px;font-size:1.05rem;line-height:1.75;">
-      {{ article.body|safe }}
+      {{ article.safe_body|safe }}
     </div>
 
     <!-- Gallery Images (N-1, N-5) -->

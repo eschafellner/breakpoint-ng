@@ -1,13 +1,20 @@
 from typing import Optional
 from django.db.models import Q
+from django.utils import timezone
 from apps.accounts.models import User
 from .models import Membership, MembershipApplication
 
+
 def get_pending_applications():
     """Return all pending applications for admin review."""
-    return MembershipApplication.objects.filter(
-        status=MembershipApplication.Status.PENDING
-    ).select_related("user", "requested_type").order_by("created_at")
+    return (
+        MembershipApplication.objects.filter(
+            status=MembershipApplication.Status.PENDING
+        )
+        .select_related("user", "requested_type")
+        .order_by("created_at")
+    )
+
 
 def get_active_members_directory(query: Optional[str] = None):
     """
@@ -15,9 +22,17 @@ def get_active_members_directory(query: Optional[str] = None):
     Only active members have access.
     Returns queryset of active users with memberships.
     """
-    memberships = Membership.objects.filter(
-        status=Membership.Status.ACTIVE
-    ).select_related("user", "type")
+    memberships = (
+        Membership.objects.filter(
+            status=Membership.Status.ACTIVE,
+            start_date__lte=timezone.localdate(),
+            user__is_active=True,
+            user__email_verified=True,
+            user__account_type=User.AccountType.MEMBER,
+        )
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=timezone.localdate()))
+        .select_related("user", "type")
+    )
 
     if query:
         query = query.strip()

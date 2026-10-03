@@ -1,6 +1,5 @@
-import json
 import pytest
-from datetime import date, timedelta
+from datetime import timedelta
 from django.core import mail
 from django.urls import reverse
 from django.utils import timezone
@@ -15,8 +14,9 @@ from apps.members.services import (
     end_expired_memberships,
 )
 
+
 @pytest.mark.django_db
-def test_application_approval_flow(admin_user):
+def test_application_approval_flow(admin_user, django_capture_on_commit_callbacks):
     """
     AP-04:
     - Freischalten erzeugt Membership mit fortlaufender Mitgliedsnummer.
@@ -39,7 +39,8 @@ def test_application_approval_flow(admin_user):
     )
 
     mail.outbox.clear()
-    membership = approve_application(application=application, reviewer=admin_user)
+    with django_capture_on_commit_callbacks(execute=True):
+        membership = approve_application(application=application, reviewer=admin_user)
 
     assert membership.member_number.startswith("TCM-")
     assert membership.status == Membership.Status.ACTIVE
@@ -59,8 +60,11 @@ def test_application_approval_flow(admin_user):
     # Audit log
     assert AuditLog.objects.filter(action="APPROVE_MEMBERSHIP_APPLICATION").exists()
 
+
 @pytest.mark.django_db
-def test_application_rejection_requires_reason(admin_user):
+def test_application_rejection_requires_reason(
+    admin_user, django_capture_on_commit_callbacks
+):
     """AP-04: Ablehnen erfordert Begründung und versendet E-Mail."""
     m_type = MembershipType.objects.create(name="Jugend", fee_amount=80)
     applicant = User.objects.create_user(
@@ -81,11 +85,12 @@ def test_application_rejection_requires_reason(admin_user):
         reject_application(application=application, reviewer=admin_user, reason="")
 
     mail.outbox.clear()
-    reject_application(
-        application=application,
-        reviewer=admin_user,
-        reason="Aufnahmestopp für die Altersklasse.",
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        reject_application(
+            application=application,
+            reviewer=admin_user,
+            reason="Aufnahmestopp für die Altersklasse.",
+        )
 
     application.refresh_from_db()
     assert application.status == MembershipApplication.Status.REJECTED
@@ -94,6 +99,7 @@ def test_application_rejection_requires_reason(admin_user):
     # Email sent with reason
     assert len(mail.outbox) >= 1
     assert "Aufnahmestopp" in mail.outbox[0].body
+
 
 @pytest.mark.django_db
 def test_csv_import_handles_valid_and_invalid_rows(admin_user):
@@ -113,8 +119,13 @@ def test_csv_import_handles_valid_and_invalid_rows(admin_user):
     assert res["errors"][0]["line"] == 3
     assert "UnbekannteArt" in res["errors"][0]["error"]
 
-    assert User.objects.filter(email="neu1@club.at", account_type=User.AccountType.MEMBER).exists()
-    assert User.objects.filter(email="neu3@club.at", account_type=User.AccountType.MEMBER).exists()
+    assert User.objects.filter(
+        email="neu1@club.at", account_type=User.AccountType.MEMBER
+    ).exists()
+    assert User.objects.filter(
+        email="neu3@club.at", account_type=User.AccountType.MEMBER
+    ).exists()
+
 
 @pytest.mark.django_db
 def test_end_expired_memberships_task():
@@ -143,6 +154,7 @@ def test_end_expired_memberships_task():
     user.refresh_from_db()
     assert user.account_type == User.AccountType.GUEST
 
+
 @pytest.mark.django_db
 def test_member_directory_permissions(client, member_user, guest_user):
     """
@@ -165,6 +177,7 @@ def test_member_directory_permissions(client, member_user, guest_user):
     resp_member = client.get(reverse("members:directory"))
     assert resp_member.status_code == 200
     assert member_user.email.encode() in resp_member.content
+
 
 @pytest.mark.django_db
 def test_gdpr_json_data_export(member_user):

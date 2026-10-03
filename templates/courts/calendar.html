@@ -8,7 +8,7 @@
         <span class="eyebrow">Online-Reservierung</span>
         <h2>Platzbelegung & Buchung</h2>
       </div>
-      {% if user.is_staff or user.groups.all %}
+      {% if can_manage_courts %}
         <a href="{% url 'courts:blockings' %}" class="btn sm ghost" style="color:var(--court);border-color:var(--court);">
           🔒 Platzsperren verwalten
         </a>
@@ -59,7 +59,7 @@
                       {% if item.slot.can_book %}
                         <button type="button"
                           class="slot"
-                          onclick="selectSlot('{{ item.court.id }}', '{{ item.court.name }}', '{{ item.slot.start|date:'c' }}', '{{ item.slot.end|date:'c' }}', '{{ item.slot.start_time_str }}', '{{ item.slot.end_time_str }}', this)"
+                          onclick="selectSlot('{{ item.court.id }}', '{{ item.court.name|escapejs }}', '{{ item.slot.start|date:'c' }}', '{{ item.slot.end|date:'c' }}', '{{ item.slot.start_time_str }}', '{{ item.slot.end_time_str }}', this)"
                           aria-label="{{ item.court.name }} um {{ item.slot.start_time_str }} Uhr frei">
                           Frei
                         </button>
@@ -92,6 +92,7 @@
           <input type="hidden" name="court_id" id="formCourtId">
           <input type="hidden" name="start" id="formStart">
           <input type="hidden" name="end" id="formEnd">
+          <input type="hidden" name="expected_total" id="formExpectedTotal">
           <input type="hidden" name="redirect_date" value="{{ current_day|date:'Y-m-d' }}">
 
           <dl>
@@ -103,8 +104,8 @@
             <dd id="dispTime">–</dd>
             <dt>Tarif:</dt>
             <dd id="dispTarif">
-              {% if user.is_authenticated and user.account_type == 'MEMBER' %}
-                Mitglied (0 €)
+              {% if user.is_member %}
+                Mitglied
               {% else %}
                 Gast (regulär)
               {% endif %}
@@ -125,9 +126,9 @@
             <div style="margin:16px 0;border-top:1px solid var(--border);padding-top:12px;">
               <label style="font-weight:600;font-size:.88rem;display:block;margin-bottom:8px;">Extras:</label>
               {% for extra in extras %}
-                <label style="display:flex;align-items:center;gap:8px;font-size:.88rem;margin-bottom:6px;cursor:pointer;">
-                  <input type="checkbox" name="extras" value="{{ extra.id }}" data-price="{% if user.account_type == 'MEMBER' %}{{ extra.price_member }}{% else %}{{ extra.price_guest }}{% endif %}" onchange="updatePrice()" {% if extra.mode == 'AUTOMATIC' %}checked disabled{% endif %}>
-                  <span>{{ extra.name }} (+{% if user.account_type == 'MEMBER' %}{{ extra.price_member }}{% else %}{{ extra.price_guest }}{% endif %} €)</span>
+                <label data-courts="{% for court in extra.courts.all %}{{ court.id }},{% endfor %}" data-mode="{{ extra.mode }}" style="display:flex;align-items:center;gap:8px;font-size:.88rem;margin-bottom:6px;cursor:pointer;">
+                  <input type="checkbox" name="extras" value="{{ extra.id }}" onchange="updatePrice()" {% if extra.mode == 'AUTOMATIC' %}checked disabled{% endif %}>
+                  <span>{{ extra.name }} (+{% if user.is_member %}{{ extra.price_member }}{% else %}{{ extra.price_guest }}{% endif %} € / {{ extra.get_unit_display }})</span>
                 </label>
               {% endfor %}
             </div>
@@ -144,7 +145,7 @@
           </p>
 
           {% if user.is_authenticated %}
-            <button type="submit" class="btn court" style="width:100%;">Verbindlich buchen</button>
+            <button type="submit" id="bookSubmit" class="btn court" style="width:100%;" disabled>Verbindlich buchen</button>
           {% else %}
             <a href="{% url 'accounts:login' %}?next={{ request.path }}" class="btn court" style="width:100%;">
               Zum Buchen bitte anmelden
@@ -158,7 +159,8 @@
 
 <script>
   let selectedBtn = null;
-  const isMember = {% if user.is_authenticated and user.account_type == 'MEMBER' %}true{% else %}false{% endif %};
+  let quoteController = null;
+  let quoteTimer = null;
 
   function selectSlot(courtId, courtName, startIso, endIso, startTime, endTime, btn) {
     if (selectedBtn) {
@@ -177,25 +179,50 @@
     document.getElementById('dispCourt').textContent = courtName;
     document.getElementById('dispTime').textContent = startTime + ' – ' + endTime + ' Uhr';
 
+    document.querySelectorAll('label[data-courts]').forEach(label => {
+      const courtIds = label.dataset.courts.split(',').filter(Boolean);
+      const applies = courtIds.length === 0 || courtIds.includes(courtId);
+      label.style.display = applies ? 'flex' : 'none';
+      const checkbox = label.querySelector('input');
+      checkbox.checked = applies && label.dataset.mode === 'AUTOMATIC';
+      checkbox.disabled = !applies || label.dataset.mode === 'AUTOMATIC';
+    });
+
     updatePrice();
   }
 
   function updatePrice() {
-    let total = isMember ? 0.0 : 15.0; // Base rate for guests
-    const guestNames = document.getElementById('guest_names').value.trim();
-    if (isMember && guestNames) {
-      const count = guestNames.split(',').filter(s => s.trim().length > 0).length;
-      total += count * 5.0; // Guest fee
-    }
-
-    // Extras
-    const checkboxes = document.querySelectorAll('input[name="extras"]:checked');
-    checkboxes.forEach(cb => {
-      const p = parseFloat(cb.getAttribute('data-price') || '0');
-      total += p;
-    });
-
-    document.getElementById('dispTotal').textContent = total.toFixed(2) + ' €';
+    clearTimeout(quoteTimer);
+    if (quoteController) quoteController.abort();
+    const submit = document.getElementById('bookSubmit');
+    if (submit) submit.disabled = true;
+    document.getElementById('dispTotal').textContent = 'Preis wird berechnet …';
+    document.getElementById('formExpectedTotal').value = '';
+    quoteTimer = setTimeout(async () => {
+      const controller = new AbortController();
+      quoteController = controller;
+      const params = new URLSearchParams();
+      for (const name of ['court_id', 'start', 'end', 'guest_names']) {
+        params.set(name, document.querySelector('#bookingForm [name="' + name + '"]').value);
+      }
+      document.querySelectorAll('input[name="extras"]:checked:not(:disabled)').forEach(cb => params.append('extras', cb.value));
+      let displayError = 'Preis nicht verfügbar. Bitte versuche es erneut.';
+      try {
+        const response = await fetch('{% url "courts:quote" %}?' + params, {signal: controller.signal});
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        if (!response.ok) {
+          if (typeof data.error === 'string') displayError = data.error;
+          throw new Error();
+        }
+        if (typeof data.total !== 'string' || !/^\d+\.\d{2}$/.test(data.total)) throw new Error();
+        document.getElementById('dispTotal').textContent = data.total + ' €';
+        document.getElementById('formExpectedTotal').value = data.total;
+        if (submit) submit.disabled = false;
+      } catch (error) {
+        if (error.name !== 'AbortError' && !controller.signal.aborted) document.getElementById('dispTotal').textContent = displayError;
+      }
+    }, 200);
   }
 </script>
 {% endblock %}

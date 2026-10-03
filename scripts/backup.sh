@@ -1,36 +1,27 @@
 #!/bin/bash
-# ========================================================
-# TC Musterdorf – Backup-Skript
-# Sichert PostgreSQL-Datenbank und hochgeladene Medien
-# ========================================================
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+umask 077
 
-set -e
-
+compose=(docker compose -f docker-compose.prod.yml)
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-mkdir -p "$BACKUP_DIR"
-
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")_$$
+mkdir -p -- "$BACKUP_DIR"
 DB_FILE="$BACKUP_DIR/db_backup_${TIMESTAMP}.sql.gz"
 MEDIA_FILE="$BACKUP_DIR/media_backup_${TIMESTAMP}.tar.gz"
+db_partial="$DB_FILE.part"
+media_partial="$MEDIA_FILE.part"
+trap 'rm -f -- "$db_partial" "$media_partial"' EXIT
 
-echo "=== Starte Backup: ${TIMESTAMP} ==="
+echo "-> Sichere PostgreSQL..."
+"${compose[@]}" exec -T db sh -c 'exec pg_dump --clean --if-exists --no-owner --no-privileges -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$db_partial"
+gzip -t -- "$db_partial"
 
-# 1. PostgreSQL Datenbank-Dump
-echo "-> Erstelle Datenbank-Dump..."
-docker compose -f docker-compose.prod.yml exec -T db pg_dump -U "${DB_USER:-tennisclub}" "${DB_NAME:-tennisclub}" | gzip > "$DB_FILE"
+echo "-> Sichere das Docker-Medien-Volume..."
+"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py backup > "$media_partial"
+"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py validate < "$media_partial"
 
-# 2. Medien-Verzeichnis sichern
-echo "-> Sichere Medien-Dateien (Fotos, Dokumente)..."
-if [ -d "./media" ]; then
-    tar -czf "$MEDIA_FILE" -C . media
-fi
-
-echo "✓ Backup erfolgreich gespeichert:"
-echo "  - Datenbank: $DB_FILE"
-if [ -f "$MEDIA_FILE" ]; then
-    echo "  - Medien:    $MEDIA_FILE"
-fi
-
-# Ältere Backups bereinigen (optional: behalte Backups der letzten 30 Tage)
-find "$BACKUP_DIR" -type f -name "*.gz" -mtime +30 -delete
-echo "=== Backup beendet ==="
+mv -- "$db_partial" "$DB_FILE"
+mv -- "$media_partial" "$MEDIA_FILE"
+echo "Backup erfolgreich: $DB_FILE und $MEDIA_FILE"
+echo "Beide Dateien sowie .env separat außerhalb des Servers sichern."

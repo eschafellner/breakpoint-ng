@@ -1,9 +1,12 @@
 from datetime import timedelta
+import logging
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
+from django.db import transaction
 from .models import Booking
+
 
 @shared_task
 def send_booking_reminders():
@@ -16,6 +19,7 @@ def send_booking_reminders():
         status=Booking.Status.CONFIRMED,
         start__gte=target_start,
         start__lt=window_end,
+        reminder_sent_at__isnull=True,
     ).select_related("booked_by", "court")
 
     count = 0
@@ -29,13 +33,28 @@ def send_booking_reminders():
             f"Wir wünschen dir ein tolles Match!\n\n"
             f"TC Musterdorf"
         )
-        send_mail(
-            subject=subject,
-            message=msg,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tc-musterdorf.local"),
-            recipient_list=[b.booked_by.email],
-            fail_silently=True,
-        )
-        count += 1
+        with transaction.atomic():
+            current = Booking.objects.select_for_update().get(pk=b.pk)
+            if current.status != Booking.Status.CONFIRMED or current.reminder_sent_at:
+                continue
+            try:
+                delivered = send_mail(
+                    subject=subject,
+                    message=msg,
+                    from_email=getattr(
+                        settings, "DEFAULT_FROM_EMAIL", "noreply@tc-musterdorf.local"
+                    ),
+                    recipient_list=[b.booked_by.email],
+                    fail_silently=False,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Buchungserinnerung #%s konnte nicht versendet werden", b.pk
+                )
+                continue
+            if delivered:
+                current.reminder_sent_at = timezone.now()
+                current.save(update_fields=["reminder_sent_at"])
+                count += 1
 
     return f"Sent {count} reminders."

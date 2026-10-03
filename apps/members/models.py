@@ -2,7 +2,10 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError
 from apps.core.models import TimeStampedModel
+from apps.core.fields import EncryptedCharField
+
 
 class MembershipType(TimeStampedModel):
     class BillingInterval(models.TextChoices):
@@ -10,7 +13,9 @@ class MembershipType(TimeStampedModel):
         MONTHLY = "MONTHLY", _("Monatlich")
 
     name = models.CharField(_("Bezeichnung"), max_length=100)
-    fee_amount = models.DecimalField(_("Beitrag (€)"), max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    fee_amount = models.DecimalField(
+        _("Beitrag (€)"), max_digits=10, decimal_places=2, default=Decimal("0.00")
+    )
     billing_interval = models.CharField(
         _("Abrechnungsintervall"),
         max_length=20,
@@ -27,7 +32,28 @@ class MembershipType(TimeStampedModel):
         ordering = ["name"]
 
     def __str__(self):
-        return f"{self.name} ({self.fee_amount} € / {self.get_billing_interval_display()})"
+        return (
+            f"{self.name} ({self.fee_amount} € / {self.get_billing_interval_display()})"
+        )
+
+    def clean(self):
+        if self.fee_amount is not None and Decimal(self.fee_amount) < 0:
+            raise ValidationError(
+                {"fee_amount": _("Der Beitrag darf nicht negativ sein.")}
+            )
+        if (
+            self.min_age is not None
+            and self.max_age is not None
+            and self.min_age > self.max_age
+        ):
+            raise ValidationError(
+                {
+                    "max_age": _(
+                        "Das Höchstalter muss mindestens dem Mindestalter entsprechen."
+                    )
+                }
+            )
+
 
 class MembershipApplication(TimeStampedModel):
     class Status(models.TextChoices):
@@ -62,7 +88,7 @@ class MembershipApplication(TimeStampedModel):
     )
     reviewed_at = models.DateTimeField(_("Geprüft am"), null=True, blank=True)
     rejection_reason = models.TextField(_("Ablehnungsgrund"), blank=True)
-    sepa_iban = models.CharField(_("SEPA IBAN"), max_length=50, blank=True)
+    sepa_iban = EncryptedCharField(_("SEPA IBAN"), max_length=255, blank=True)
     sepa_mandate_date = models.DateField(_("SEPA Mandatsdatum"), null=True, blank=True)
 
     class Meta:
@@ -72,6 +98,7 @@ class MembershipApplication(TimeStampedModel):
 
     def __str__(self):
         return f"Antrag #{self.pk}: {self.user} ({self.requested_type.name}) - {self.get_status_display()}"
+
 
 class Membership(TimeStampedModel):
     class Status(models.TextChoices):
@@ -107,3 +134,9 @@ class Membership(TimeStampedModel):
 
     def __str__(self):
         return f"{self.member_number} - {self.user.get_full_name()} ({self.type.name})"
+
+    def clean(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError(
+                {"end_date": _("Das Enddatum muss nach dem Beginn liegen.")}
+            )

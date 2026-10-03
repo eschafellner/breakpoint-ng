@@ -2,6 +2,8 @@ from datetime import date, time, timedelta
 from decimal import Decimal
 from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
+from django.core.management.base import CommandError
+from django.conf import settings
 from django.utils import timezone
 from apps.accounts.models import User
 from apps.accounts.services import create_standard_groups
@@ -15,29 +17,118 @@ from apps.tournaments.models import Tournament, Competition, Entry
 from apps.tournaments.services import generate_knockout_draw
 
 FIRST_NAMES = [
-    "Alexander", "Anna", "Bernhard", "Birgit", "Christoph", "Claudia", "Daniel", "Doris",
-    "Elias", "Elisabeth", "Fabian", "Franziska", "Georg", "Gerda", "Harald", "Helena",
-    "Jakob", "Julia", "Klaus", "Katharina", "Lukas", "Lena", "Martin", "Monika",
-    "Nikolaus", "Nina", "Oliver", "Petra", "Philipp", "Renate", "Robert", "Sabine",
-    "Sebastian", "Sandra", "Thomas", "Tanja", "Ulrich", "Ursula", "Valentin", "Verena",
-    "Wolfgang", "Viktoria", "Johannes", "Theresa", "Michael", "Maria", "Maximilian", "Sophie",
-    "Florian", "Laura"
+    "Alexander",
+    "Anna",
+    "Bernhard",
+    "Birgit",
+    "Christoph",
+    "Claudia",
+    "Daniel",
+    "Doris",
+    "Elias",
+    "Elisabeth",
+    "Fabian",
+    "Franziska",
+    "Georg",
+    "Gerda",
+    "Harald",
+    "Helena",
+    "Jakob",
+    "Julia",
+    "Klaus",
+    "Katharina",
+    "Lukas",
+    "Lena",
+    "Martin",
+    "Monika",
+    "Nikolaus",
+    "Nina",
+    "Oliver",
+    "Petra",
+    "Philipp",
+    "Renate",
+    "Robert",
+    "Sabine",
+    "Sebastian",
+    "Sandra",
+    "Thomas",
+    "Tanja",
+    "Ulrich",
+    "Ursula",
+    "Valentin",
+    "Verena",
+    "Wolfgang",
+    "Viktoria",
+    "Johannes",
+    "Theresa",
+    "Michael",
+    "Maria",
+    "Maximilian",
+    "Sophie",
+    "Florian",
+    "Laura",
 ]
 
 LAST_NAMES = [
-    "Moser", "Gruber", "Bauer", "Huber", "Steiner", "Pichler", "Wagner", "Müller",
-    "Schmidt", "Wallner", "Aigner", "Eder", "Fischer", "Fuchs", "Hofer", "Leitner",
-    "Mayr", "Reiter", "Schmid", "Weber", "Wimmer", "Berger", "Wieser", "Kaufmann",
-    "Brunner", "Ebner", "Haas", "Koller", "Lang", "Maier", "Ortner", "Rauch",
-    "Schwarz", "Stadler", "Vogel", "Weiß", "Zimmermann", "Brandl", "Graf", "Hartl",
-    "Kogler", "Kroll", "Lindner", "Mader", "Neuhauser", "Prinz", "Riedl", "Sailer",
-    "Traxler", "Winter"
+    "Moser",
+    "Gruber",
+    "Bauer",
+    "Huber",
+    "Steiner",
+    "Pichler",
+    "Wagner",
+    "Müller",
+    "Schmidt",
+    "Wallner",
+    "Aigner",
+    "Eder",
+    "Fischer",
+    "Fuchs",
+    "Hofer",
+    "Leitner",
+    "Mayr",
+    "Reiter",
+    "Schmid",
+    "Weber",
+    "Wimmer",
+    "Berger",
+    "Wieser",
+    "Kaufmann",
+    "Brunner",
+    "Ebner",
+    "Haas",
+    "Koller",
+    "Lang",
+    "Maier",
+    "Ortner",
+    "Rauch",
+    "Schwarz",
+    "Stadler",
+    "Vogel",
+    "Weiß",
+    "Zimmermann",
+    "Brandl",
+    "Graf",
+    "Hartl",
+    "Kogler",
+    "Kroll",
+    "Lindner",
+    "Mader",
+    "Neuhauser",
+    "Prinz",
+    "Riedl",
+    "Sailer",
+    "Traxler",
+    "Winter",
 ]
+
 
 class Command(BaseCommand):
     help = "Seed database with demo data: 50 members, 10 guests, 4 courts, 2 tournaments, news"
 
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError("Demodaten dürfen nur mit DEBUG=True erzeugt werden.")
         self.stdout.write("Erstelle Standard-Gruppen und Rollen...")
         create_standard_groups()
 
@@ -133,24 +224,39 @@ class Command(BaseCommand):
         turnierleiter.groups.add(turnier_group)
         turnierleiter.save()
 
-        self.stdout.write("[OK] Rollenkonten (Admin, Kassier, Platzwart, Redakteur, Turnierleiter) erstellt.")
+        self.stdout.write(
+            "[OK] Rollenkonten (Admin, Kassier, Platzwart, Redakteur, Turnierleiter) erstellt."
+        )
 
         # 3. Membership Types
         t_erw, _ = MembershipType.objects.get_or_create(
             name="Erwachsener",
-            defaults={"fee_amount": Decimal("180.00"), "billing_interval": MembershipType.BillingInterval.YEARLY},
+            defaults={
+                "fee_amount": Decimal("180.00"),
+                "billing_interval": MembershipType.BillingInterval.YEARLY,
+            },
         )
         t_jug, _ = MembershipType.objects.get_or_create(
             name="Jugendlicher (U18)",
-            defaults={"fee_amount": Decimal("80.00"), "billing_interval": MembershipType.BillingInterval.YEARLY, "max_age": 18},
+            defaults={
+                "fee_amount": Decimal("80.00"),
+                "billing_interval": MembershipType.BillingInterval.YEARLY,
+                "max_age": 18,
+            },
         )
         t_fam, _ = MembershipType.objects.get_or_create(
             name="Familie",
-            defaults={"fee_amount": Decimal("320.00"), "billing_interval": MembershipType.BillingInterval.YEARLY},
+            defaults={
+                "fee_amount": Decimal("320.00"),
+                "billing_interval": MembershipType.BillingInterval.YEARLY,
+            },
         )
         t_mon, _ = MembershipType.objects.get_or_create(
             name="Monatsbeitrag",
-            defaults={"fee_amount": Decimal("20.00"), "billing_interval": MembershipType.BillingInterval.MONTHLY},
+            defaults={
+                "fee_amount": Decimal("20.00"),
+                "billing_interval": MembershipType.BillingInterval.MONTHLY,
+            },
         )
 
         # 4. 50 Members
@@ -272,7 +378,9 @@ class Command(BaseCommand):
             },
         )
         extra_halle.courts.add(halle_court)
-        self.stdout.write("[OK] 4 Plätze, Öffnungszeiten, Preisregeln und Extras angelegt.")
+        self.stdout.write(
+            "[OK] 4 Plätze, Öffnungszeiten, Preisregeln und Extras angelegt."
+        )
 
         # 7. 2 Tournaments
         now = timezone.now()
@@ -333,11 +441,15 @@ class Command(BaseCommand):
                 "max_entries": 8,
             },
         )
-        self.stdout.write("[OK] 2 Turniere mit Konkurrenzen und K.-o.-Tableau angelegt.")
+        self.stdout.write(
+            "[OK] 2 Turniere mit Konkurrenzen und K.-o.-Tableau angelegt."
+        )
 
         # 8. News Articles
         cat_verein, _ = Category.objects.get_or_create(name="Verein", slug="verein")
-        cat_turniere, _ = Category.objects.get_or_create(name="Turniere", slug="turniere")
+        cat_turniere, _ = Category.objects.get_or_create(
+            name="Turniere", slug="turniere"
+        )
 
         if not Article.objects.filter(slug="saisoneroeffnung-2027").exists():
             create_article(
@@ -349,7 +461,9 @@ class Command(BaseCommand):
                 is_pinned=True,
             )
 
-        if not Article.objects.filter(slug="ausschreibung-ortsmeisterschaft-2027").exists():
+        if not Article.objects.filter(
+            slug="ausschreibung-ortsmeisterschaft-2027"
+        ).exists():
             create_article(
                 title="Ausschreibung Ortsmeisterschaft 2027",
                 teaser="Die Anmeldung für die diesjährige Ortsmeisterschaft ist ab sofort online geöffnet.",
@@ -358,4 +472,6 @@ class Command(BaseCommand):
                 author=redakteur,
             )
 
-        self.stdout.write(self.style.SUCCESS("[OK] Seed-Daten erfolgreich vollständig eingespielt!"))
+        self.stdout.write(
+            self.style.SUCCESS("[OK] Seed-Daten erfolgreich vollständig eingespielt!")
+        )

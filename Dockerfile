@@ -20,7 +20,7 @@ COPY . /app/
 RUN pip install --no-cache-dir .
 
 # Create directories for media, staticfiles, and logs
-RUN mkdir -p /app/staticfiles /app/media /app/logs
+RUN mkdir -p /app/staticfiles /app/media /app/logs /app/celerybeat
 
 EXPOSE 8000
 

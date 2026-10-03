@@ -1,12 +1,17 @@
 import pytest
-from datetime import date, time, timedelta
+from datetime import date, time
 from decimal import Decimal
-from django.utils import timezone
 from apps.accounts.models import User
 from apps.core.models import ClubSettings
 from apps.courts.models import Court, OpeningHours
 from apps.billing.models import PriceRule, BookingExtra
 from apps.members.models import MembershipType, Membership
+
+
+@pytest.fixture(autouse=True)
+def isolated_media(settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path / "media"
+
 
 @pytest.fixture
 def club_settings(db):
@@ -21,6 +26,7 @@ def club_settings(db):
     settings.save()
     return settings
 
+
 @pytest.fixture
 def admin_user(db):
     user = User.objects.create_superuser(
@@ -30,6 +36,7 @@ def admin_user(db):
         last_name="Vorstand",
     )
     return user
+
 
 @pytest.fixture
 def member_user(db):
@@ -43,19 +50,23 @@ def member_user(db):
     )
     m_type, _ = MembershipType.objects.get_or_create(
         name="Erwachsener",
-        defaults={"fee_amount": Decimal("180.00"), "billing_interval": MembershipType.BillingInterval.YEARLY},
+        defaults={
+            "fee_amount": Decimal("180.00"),
+            "billing_interval": MembershipType.BillingInterval.YEARLY,
+        },
     )
     Membership.objects.create(
         user=user,
         type=m_type,
         member_number="TCM-0001",
-        start_date=date(2026, 1, 1),
+        start_date=date(2020, 1, 1),
         status=Membership.Status.ACTIVE,
     )
     return user
 
+
 @pytest.fixture
-def member_user2(db):
+def member_user2(db, member_user):
     user = User.objects.create_user(
         email="mitglied2@tc-musterdorf.at",
         password="memberpassword123",
@@ -69,10 +80,11 @@ def member_user2(db):
         user=user,
         type=m_type,
         member_number="TCM-0002",
-        start_date=date(2026, 1, 1),
+        start_date=date(2020, 1, 1),
         status=Membership.Status.ACTIVE,
     )
     return user
+
 
 @pytest.fixture
 def guest_user(db):
@@ -84,6 +96,7 @@ def guest_user(db):
         account_type=User.AccountType.GUEST,
         email_verified=True,
     )
+
 
 @pytest.fixture
 def court_sand(db):
@@ -115,6 +128,7 @@ def court_sand(db):
         price_per_person=Decimal("5.00"),
     )
     return court
+
 
 @pytest.fixture
 def court_halle(db):

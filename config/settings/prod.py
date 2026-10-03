@@ -1,4 +1,5 @@
 import os
+from celery.schedules import crontab
 from .base import *
 
 DEBUG = False
@@ -17,6 +18,22 @@ STORAGES = {
     },
 }
 NGINX_MEDIA_ACCEL = True
+
+# Persisted by Celery Beat's schedule file; exactly one Beat instance is used.
+CELERY_BEAT_SCHEDULE = {
+    "end-expired-memberships": {
+        "task": "apps.members.tasks.task_end_expired_memberships",
+        "schedule": crontab(hour=0, minute=5),
+    },
+    "booking-reminders": {
+        "task": "apps.courts.tasks.send_booking_reminders",
+        "schedule": crontab(minute=0),
+    },
+    "expire-pending-partners": {
+        "task": "apps.tournaments.tasks.expire_pending_partners",
+        "schedule": crontab(minute=0),
+    },
+}
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")

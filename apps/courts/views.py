@@ -1,15 +1,26 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.utils.http import url_has_allowed_host_and_scheme
 from apps.accounts.permissions import is_court_manager
 from apps.billing.models import BookingExtra
+from apps.core.view_utils import positive_pk
 from .models import Court, Booking, Blocking
-from .services import create_booking, cancel_booking, create_blocking
+from .services import (
+    create_booking,
+    cancel_booking,
+    create_blocking,
+    calculate_booking_price,
+)
 from .selectors import get_calendar_matrix, get_active_courts
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+from django.views.decorators.cache import never_cache
+
 
 def calendar_view(request):
     """Interaktiver Buchungskalender mit Tagesansicht (P-4, P-11)."""
@@ -23,7 +34,7 @@ def calendar_view(request):
         current_day = timezone.now().date()
 
     calendar_data = get_calendar_matrix(current_day, user=request.user)
-    extras = BookingExtra.objects.filter(is_active=True)
+    extras = BookingExtra.objects.filter(is_active=True).prefetch_related("courts")
 
     # Days for the date picker strip (today + next 7 days)
     today = timezone.now().date()
@@ -31,7 +42,9 @@ def calendar_view(request):
         {
             "date": today + timedelta(days=i),
             "date_str": (today + timedelta(days=i)).isoformat(),
-            "weekday_short": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][(today + timedelta(days=i)).weekday()],
+            "weekday_short": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][
+                (today + timedelta(days=i)).weekday()
+            ],
             "is_current": (today + timedelta(days=i) == current_day),
         }
         for i in range(8)
@@ -49,6 +62,45 @@ def calendar_view(request):
         },
     )
 
+
+@never_cache
+@require_GET
+def booking_quote_view(request):
+    """Read-only preview using the same tariffs as the actual booking."""
+    try:
+        court = Court.objects.get(
+            pk=int(request.GET.get("court_id", "")), is_active=True
+        )
+        start = datetime.fromisoformat(request.GET.get("start", ""))
+        end = datetime.fromisoformat(request.GET.get("end", ""))
+        if timezone.is_naive(start):
+            start = timezone.make_aware(start)
+        if timezone.is_naive(end):
+            end = timezone.make_aware(end)
+        guests = [
+            name.strip()
+            for name in request.GET.get("guest_names", "").split(",")
+            if name.strip()
+        ]
+        extra_ids = [int(value) for value in request.GET.getlist("extras")]
+        total, charge_kind, extra_lines = calculate_booking_price(
+            court=court,
+            booked_by=request.user,
+            start=start,
+            end=end,
+            guest_players_count=len(guests),
+            selected_extra_ids=extra_ids,
+        )
+        return JsonResponse({"total": str(total)})
+    except (ValueError, TypeError, Court.DoesNotExist, ValidationError) as exc:
+        error = (
+            " ".join(exc.messages)
+            if isinstance(exc, ValidationError)
+            else _("Ungültige Buchungsauswahl.")
+        )
+        return JsonResponse({"error": error}, status=400)
+
+
 @login_required
 def book_slot_view(request):
     """Slot buchen per POST."""
@@ -59,7 +111,7 @@ def book_slot_view(request):
         guest_names_raw = request.POST.get("guest_names", "")
         extra_ids_raw = request.POST.getlist("extras")
 
-        court = get_object_or_404(Court, pk=court_id)
+        court = get_object_or_404(Court, pk=positive_pk(court_id))
 
         try:
             start_dt = datetime.fromisoformat(start_str)
@@ -79,10 +131,13 @@ def book_slot_view(request):
                 end=end_dt,
                 guest_names=guest_names,
                 selected_extra_ids=extra_ids,
+                expected_total=request.POST.get("expected_total") or None,
             )
             messages.success(
                 request,
-                _("Buchung erfolgreich! Platz %(court)s am %(date)s reserviert (Kosten: %(cost)s €).")
+                _(
+                    "Buchung erfolgreich! Platz %(court)s am %(date)s reserviert (Kosten: %(cost)s €)."
+                )
                 % {
                     "court": court.name,
                     "date": f"{start_dt:%d.%m. %H:%M}",
@@ -95,6 +150,7 @@ def book_slot_view(request):
             messages.error(request, str(e))
 
     return redirect(f"/courts/calendar/?date={request.POST.get('redirect_date', '')}")
+
 
 @login_required
 def cancel_booking_view(request, booking_id):
@@ -109,8 +165,17 @@ def cancel_booking_view(request, booking_id):
         except Exception as e:
             messages.error(request, str(e))
 
-    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or "courts:calendar"
+    next_url = (
+        request.POST.get("next")
+        or request.META.get("HTTP_REFERER")
+        or "courts:calendar"
+    )
+    if next_url != "courts:calendar" and not url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        next_url = "courts:calendar"
     return redirect(next_url)
+
 
 @login_required
 def blockings_view(request):
@@ -119,7 +184,9 @@ def blockings_view(request):
         raise PermissionDenied(_("Zugriff nur für Platzwarte und Administratoren."))
 
     courts = get_active_courts()
-    blockings = Blocking.objects.select_related("court", "created_by").order_by("-start")[:50]
+    blockings = Blocking.objects.select_related("court", "created_by").order_by(
+        "-start"
+    )[:50]
 
     if request.method == "POST":
         court_id = request.POST.get("court_id")
@@ -128,10 +195,14 @@ def blockings_view(request):
         reason = request.POST.get("reason", Blocking.Reason.TRAINING)
         note = request.POST.get("note", "")
 
-        court = get_object_or_404(Court, pk=court_id)
+        court = get_object_or_404(Court, pk=positive_pk(court_id))
         try:
-            start_dt = timezone.make_aware(datetime.fromisoformat(start_str))
-            end_dt = timezone.make_aware(datetime.fromisoformat(end_str))
+            start_dt = datetime.fromisoformat(start_str)
+            end_dt = datetime.fromisoformat(end_str)
+            if timezone.is_naive(start_dt):
+                start_dt = timezone.make_aware(start_dt)
+            if timezone.is_naive(end_dt):
+                end_dt = timezone.make_aware(end_dt)
             blocking, cancelled = create_blocking(
                 court=court,
                 start=start_dt,
@@ -143,7 +214,9 @@ def blockings_view(request):
             )
             msg = _("Sperre erfolgreich eingetragen.")
             if cancelled:
-                msg += _(" Es wurden %(cnt)d Buchungen automatisch storniert und die Nutzer benachrichtigt.") % {"cnt": len(cancelled)}
+                msg += _(
+                    " Es wurden %(cnt)d Buchungen automatisch storniert und die Nutzer benachrichtigt."
+                ) % {"cnt": len(cancelled)}
             messages.success(request, msg)
             return redirect("courts:blockings")
         except Exception as e:

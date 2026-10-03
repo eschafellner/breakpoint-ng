@@ -1,16 +1,28 @@
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional
 from django.utils import timezone
+from django.db.models import Q
 from .models import Court, OpeningHours, Blocking, Booking
+
 
 def get_active_courts():
     """Return all active courts sorted by order."""
     return Court.objects.filter(is_active=True).order_by("order", "id")
 
+
 def get_opening_hours_for_court(court: Court, day: date) -> Optional[OpeningHours]:
     """Find opening hours for court on given weekday."""
     weekday = day.weekday()
-    return OpeningHours.objects.filter(court=court, weekday=weekday).first()
+    return (
+        OpeningHours.objects.filter(court=court, weekday=weekday)
+        .filter(
+            Q(season__isnull=True)
+            | Q(season__start_date__lte=day, season__end_date__gte=day)
+        )
+        .order_by("-season_id", "id")
+        .first()
+    )
+
 
 def get_court_slots_for_day(court: Court, day: date, user=None) -> List[Dict[str, Any]]:
     """
@@ -18,21 +30,32 @@ def get_court_slots_for_day(court: Court, day: date, user=None) -> List[Dict[str
     Anonymizes bookings for visitors / guests (P-11: 'Öffentliche Ansicht zeigt keine Namen').
     """
     op = get_opening_hours_for_court(court, day)
-    open_time = op.open_time if op else time(8, 0)
-    close_time = op.close_time if op else time(21, 0)
-    slot_minutes = op.slot_minutes if op else 60
+    if (
+        not op
+        or not court.is_active
+        or op.slot_minutes <= 0
+        or op.open_time >= op.close_time
+    ):
+        return []
+    open_time = op.open_time
+    close_time = op.close_time
+    slot_minutes = op.slot_minutes
 
     # Build aware datetimes for start of day slots
     day_start = timezone.make_aware(datetime.combine(day, open_time))
     day_end = timezone.make_aware(datetime.combine(day, close_time))
 
     # Fetch confirmed bookings and blockings for this court & day
-    bookings = Booking.objects.filter(
-        court=court,
-        status=Booking.Status.CONFIRMED,
-        start__lt=day_end,
-        end__gt=day_start,
-    ).select_related("booked_by").prefetch_related("participants")
+    bookings = (
+        Booking.objects.filter(
+            court=court,
+            status=Booking.Status.CONFIRMED,
+            start__lt=day_end,
+            end__gt=day_start,
+        )
+        .select_related("booked_by")
+        .prefetch_related("participants")
+    )
 
     blockings = Blocking.objects.filter(
         court=court,
@@ -46,7 +69,7 @@ def get_court_slots_for_day(court: Court, day: date, user=None) -> List[Dict[str
 
     while current_dt + slot_delta <= day_end:
         slot_end = current_dt + slot_delta
-        
+
         # Check blocking
         blocking_match = None
         for blk in blockings:
@@ -70,7 +93,9 @@ def get_court_slots_for_day(court: Court, day: date, user=None) -> List[Dict[str
             label = blocking_match.get_reason_display()
             can_book = False
         elif booking_match:
-            is_mine = bool(user and user.is_authenticated and (booking_match.booked_by == user))
+            is_mine = bool(
+                user and user.is_authenticated and (booking_match.booked_by == user)
+            )
             if is_mine:
                 slot_state = "mine"
                 label = "Meine Buchung"
@@ -84,20 +109,23 @@ def get_court_slots_for_day(court: Court, day: date, user=None) -> List[Dict[str
             label = "–"
             can_book = False
 
-        slots.append({
-            "start": current_dt,
-            "end": slot_end,
-            "start_time_str": current_dt.strftime("%H:%M"),
-            "end_time_str": slot_end.strftime("%H:%M"),
-            "state": slot_state,
-            "label": label,
-            "can_book": can_book,
-            "court_id": court.id,
-            "booking_id": booking_match.id if booking_match else None,
-        })
+        slots.append(
+            {
+                "start": current_dt,
+                "end": slot_end,
+                "start_time_str": current_dt.strftime("%H:%M"),
+                "end_time_str": slot_end.strftime("%H:%M"),
+                "state": slot_state,
+                "label": label,
+                "can_book": can_book,
+                "court_id": court.id,
+                "booking_id": booking_match.id if booking_match else None,
+            }
+        )
         current_dt += slot_delta
 
     return slots
+
 
 def get_calendar_matrix(day: date, user=None) -> Dict[str, Any]:
     """

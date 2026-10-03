@@ -2,9 +2,13 @@ import json
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render, redirect, get_object_or_404
+from django.http import HttpResponse
+from django.shortcuts import render, redirect
 from django.utils.translation import gettext as _
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
+from django.db import IntegrityError
+from django.core.exceptions import ValidationError
 from .forms import LoginForm, RegistrationForm, ProfileForm
 from .services import (
     register_user,
@@ -14,6 +18,7 @@ from .services import (
     export_user_data,
 )
 from apps.core.services import log_audit
+
 
 def login_view(request):
     """Email + password login with lock-out protection."""
@@ -27,27 +32,46 @@ def login_view(request):
             user = form.user
             reset_failed_logins(user)
             login(request, user)
-            messages.success(request, _("Willkommen zurück, %(name)s!") % {"name": user.first_name or user.email})
-            next_url = request.GET.get("next") or "core:home"
+            messages.success(
+                request,
+                _("Willkommen zurück, %(name)s!")
+                % {"name": user.first_name or user.email},
+            )
+            next_url = request.POST.get("next") or request.GET.get("next")
+            if not next_url or not url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                next_url = "core:home"
             return redirect(next_url)
         else:
             # Check if this email exists to track failed attempts
-            is_locked = record_failed_login(email, ip_address=request.META.get("REMOTE_ADDR"))
+            is_locked = False
+            if not getattr(form, "credentials_valid", False):
+                is_locked = record_failed_login(
+                    email, ip_address=request.META.get("REMOTE_ADDR")
+                )
             if is_locked:
                 messages.error(
                     request,
-                    _("Zu viele Fehlversuche. Dein Konto wurde für 15 Minuten vorübergehend gesperrt."),
+                    _(
+                        "Zu viele Fehlversuche. Dein Konto wurde für 15 Minuten vorübergehend gesperrt."
+                    ),
                 )
     else:
         form = LoginForm()
 
     return render(request, "accounts/login.html", {"form": form, "title": "Anmelden"})
 
+
+@require_POST
 def logout_view(request):
     """User logout."""
     logout(request)
     messages.info(request, _("Du hast dich erfolgreich abgemeldet."))
     return redirect("core:home")
+
 
 def register_view(request):
     """Self-registration as guest or member applicant."""
@@ -58,41 +82,68 @@ def register_view(request):
         form = RegistrationForm(request.POST)
         if form.is_valid():
             data = form.cleaned_data
-            user = register_user(
-                email=data["email"],
-                password=data["password"],
-                first_name=data["first_name"],
-                last_name=data["last_name"],
-                phone=data.get("phone", ""),
-                birth_date=data.get("birth_date"),
-                address_street=data.get("address_street", ""),
-                address_zip=data.get("address_zip", ""),
-                address_city=data.get("address_city", ""),
-                account_type=data["account_type"],
-                apply_membership_type_id=int(data["membership_type"]) if data.get("membership_type") else None,
-                sepa_iban=data.get("sepa_iban", ""),
-                consent_privacy=data["consent_privacy"],
-                ip_address=request.META.get("REMOTE_ADDR"),
-            )
-            return render(
-                request,
-                "accounts/registered_success.html",
-                {"user": user, "title": "Registrierung erfolgreich"},
-            )
+            try:
+                user = register_user(
+                    email=data["email"],
+                    password=data["password"],
+                    first_name=data["first_name"],
+                    last_name=data["last_name"],
+                    phone=data.get("phone", ""),
+                    birth_date=data.get("birth_date"),
+                    address_street=data.get("address_street", ""),
+                    address_zip=data.get("address_zip", ""),
+                    address_city=data.get("address_city", ""),
+                    account_type=data["account_type"],
+                    apply_membership_type_id=(
+                        int(data["membership_type"])
+                        if data.get("membership_type")
+                        else None
+                    ),
+                    sepa_iban=data.get("sepa_iban", ""),
+                    consent_privacy=data["consent_privacy"],
+                    ip_address=request.META.get("REMOTE_ADDR"),
+                    site_url=request.build_absolute_uri("/").rstrip("/"),
+                )
+            except (ValidationError, IntegrityError):
+                form.add_error(
+                    None,
+                    _(
+                        "Registrierung nicht möglich. Bitte prüfe E-Mail und Mitgliedschaftsart."
+                    ),
+                )
+            else:
+                return render(
+                    request,
+                    "accounts/registered_success.html",
+                    {
+                        "user": user,
+                        "membership_requested": data["account_type"] == "MEMBER",
+                        "title": "Registrierung erfolgreich",
+                    },
+                )
     else:
         form = RegistrationForm()
 
-    return render(request, "accounts/register.html", {"form": form, "title": "Registrieren"})
+    return render(
+        request, "accounts/register.html", {"form": form, "title": "Registrieren"}
+    )
+
 
 def verify_email_view(request, token):
     """Handle verification link."""
     user = verify_email(token)
     if user:
-        messages.success(request, _("Deine E-Mail-Adresse wurde erfolgreich bestätigt! Du kannst dich jetzt anmelden."))
+        messages.success(
+            request,
+            _(
+                "Deine E-Mail-Adresse wurde erfolgreich bestätigt! Du kannst dich jetzt anmelden."
+            ),
+        )
         return redirect("accounts:login")
     else:
         messages.error(request, _("Der Bestätigungslink ist ungültig oder abgelaufen."))
         return redirect("accounts:login")
+
 
 @login_required
 def profile_view(request):
@@ -114,28 +165,13 @@ def profile_view(request):
     else:
         form = ProfileForm(instance=user)
 
-    # Load user's bookings and charges for profile view
-    recent_bookings = []
-    charges = []
-    try:
-        from apps.courts.models import Booking
-        recent_bookings = Booking.objects.filter(booked_by=user).order_by("-start")[:5]
-    except Exception:
-        pass
+    from apps.courts.models import Booking
+    from apps.billing.models import Charge
+    from apps.members.selectors import get_active_members_directory
 
-    try:
-        from apps.billing.models import Charge
-        charges = Charge.objects.filter(user=user).order_by("-due_date")[:10]
-    except Exception:
-        pass
-
-    # Membership info
-    membership = None
-    try:
-        from apps.members.models import Membership
-        membership = Membership.objects.filter(user=user, status=Membership.Status.ACTIVE).first()
-    except Exception:
-        pass
+    recent_bookings = Booking.objects.filter(booked_by=user).order_by("-start")[:5]
+    charges = Charge.objects.filter(user=user).order_by("-due_date")[:10]
+    membership = get_active_members_directory().filter(user=user).first()
 
     context = {
         "title": "Mein Profil",
@@ -145,6 +181,7 @@ def profile_view(request):
         "charges": charges,
     }
     return render(request, "accounts/profile.html", context)
+
 
 @login_required
 def export_data_view(request):
@@ -160,5 +197,7 @@ def export_data_view(request):
     )
     json_data = json.dumps(data, indent=2, ensure_ascii=False)
     response = HttpResponse(json_data, content_type="application/json")
-    response["Content-Disposition"] = f'attachment; filename="datenexport_{user.pk}.json"'
+    response["Content-Disposition"] = (
+        f'attachment; filename="datenexport_{user.pk}.json"'
+    )
     return response

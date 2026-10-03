@@ -6,7 +6,15 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "insecure-dev-key-tennisclub-change-in-prod-1234567890")
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY", "insecure-dev-key-tennisclub-change-in-prod-1234567890"
+)
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").rstrip("/")
+SECRET_KEY_FALLBACKS = [
+    key.strip()
+    for key in os.getenv("DJANGO_SECRET_KEY_FALLBACKS", "").split(",")
+    if key.strip()
+]
 
 DEBUG = False
 
@@ -67,8 +75,13 @@ WSGI_APPLICATION = "config.wsgi.application"
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]

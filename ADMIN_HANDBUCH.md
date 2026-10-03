@@ -36,7 +36,7 @@ Dieses Handbuch richtet sich an den Vorstand, Kassier, Platzwart, Turnierleiter 
    - 8.2 Bildergalerie hinzufügen und Alt-Texte pflegen
    - 8.3 Zeitgesteuerte und mitglieder-exklusive Veröffentlichung
 9. [Betrieb, Updates und Datensicherung (DevOps / Verein)](#9-betrieb-updates-und-datensicherung-devops--verein)
-   - 9.1 Updates einspielen mit `./update.sh`
+   - 9.1 Updates einspielen mit `bash update.sh`
    - 9.2 Backups erstellen und wiederherstellen
    - 9.3 Cloudflare Tunnel & Sicherheit
 
@@ -59,25 +59,30 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 |---|---|
 | **Besucher** | Öffentliche News lesen, Spielberichte ansehen, anonymisierten Buchungskalender sehen. |
 | **Gast** | Registrierter Nutzer. Kann kostenpflichtig Plätze buchen und sich für offene Turniere anmelden. |
-| **Mitglied** | Aktives Vereinsmitglied. Kostenlose Platzbuchung, Zugriff auf interne Mitgliederliste, Teilnahme an vereinsinternen Meisterschaften. |
+| **Mitglied** | Aktives Vereinsmitglied. Mitgliedertarife, interne Mitgliederliste und Teilnahme an vereinsinternen Meisterschaften. |
 | **Redakteur** | Verfassen und Veröffentlichen von Artikeln und Fotogalerien. |
 | **Platzwart** | Sperren von Plätzen wegen Wetter/Pflege/Training, Pflege der Öffnungszeiten. |
 | **Kassier** | Durchführung des jährlichen/monatlichen Beitragslaufs, Erfassung von Zahlungseingängen, Finanzexporte. |
 | **Turnierleiter** | Anlegen von Turnieren, Auslosung von Tableaus, Ergebniserfassung. |
 | **Administrator (Vorstand)** | Freischaltung neuer Mitglieder, Vereinsstammdaten, Zuweisung von Vereinsrollen. |
 
+Mitgliederrechte gelten nur für aktive, bestätigte Konten mit einer heute gültigen,
+aktiven Mitgliedschaft. Eine zukünftige, pausierte oder abgelaufene Mitgliedschaft
+berechtigt nicht zum Mitgliederbereich. Der Mitgliedertarif kann einen Preis
+enthalten; zusätzliche Gastspieler und Extras werden separat berechnet.
+
 ---
 
 ## 3. Mitgliederverwaltung
 
 ### 3.1 Offene Mitgliedsanträge prüfen und freischalten
-1. Navigiere in der Menüleiste auf **„Anträge“** (oder im Admin unter *Mitgliedsanträge*).
+1. Navigiere in der Menüleiste auf **„Anträge“**. Die Einträge im Django-Admin dienen der Einsicht.
 2. Du siehst eine Liste aller Personen, die sich auf der Webseite registriert und die Mitgliedschaft beantragt haben.
 3. Klicke auf die grüne Schaltfläche **„✓ Freischalten“**.
 4. **Was das System automatisch erledigt:**
    - Der Benutzer wird sofort vom Typ *Gast* auf *Mitglied* hochgestuft.
    - Dem Mitglied wird automatisch die nächste freie Mitgliedsnummer zugewiesen (z.B. `TCM-0042`).
-   - Eine Willkommens-E-Mail mit Mitgliedsnummer und Zugangsdaten wird an das Mitglied versendet.
+   - Eine Willkommens-E-Mail mit Mitgliedsnummer wird nach erfolgreicher Speicherung versendet; Passwörter werden nicht verschickt.
    - Die Freischaltung wird revisionssicher im Änderungsprotokoll protokolliert.
 
 ### 3.2 Mitgliedsantrag ablehnen
@@ -88,6 +93,9 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 
 ### 3.3 Mitglieder manuell anlegen oder per CSV importieren
 - **Einzeln anlegen:** Im Django-Admin unter *Benutzer* oder *Mitgliedschaften* auf *Hinzufügen* klicken.
+- Ein Benutzerkonto allein begründet noch keine Mitgliedschaft. Beim Speichern
+  einer Mitgliedschaft synchronisiert der Admin den Kontotyp; für Mitgliederrechte
+  müssen zusätzlich Zeitraum, Status und E-Mail-Bestätigung passen.
 - **CSV-Sammelimport:**
   1. Gehe auf **„Anträge“** → **„+ CSV-Import“**.
   2. Wähle eine CSV-Datei aus (oder füge den Text direkt ein).
@@ -95,6 +103,10 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
      `email,first_name,last_name,phone,membership_type`
   4. Auf **„CSV-Import ausführen“** klicken.
   5. Das System legt die Konten an. Fehlerhafte Zeilen (z.B. unbekannte Mitgliedschaftsart) werden mit genauer Zeilennummer angezeigt, ohne den restlichen Import zu stoppen.
+
+Neue Konten aus dem Import besitzen kein voreingestelltes Passwort. Zum erstmaligen
+Anmelden ein eigenes Passwort über den Passwort-Reset setzen und den
+E-Mail-Bestätigungsstatus administrativ prüfen.
 
 ### 3.4 Interne Mitgliederliste (DSGVO)
 - Unter dem Menüpunkt **„Mitglieder“** sehen aktive Vereinsmitglieder die Kontaktdaten (Name, Telefon, E-Mail) aller anderen aktiven Mitglieder zur Organisation von Spielpartnern.
@@ -128,6 +140,17 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 ### 4.4 CSV-Export für die Buchhaltung
 - Durch Klick auf **„📥 CSV-Export“** wird die aktuelle Liste der Forderungen und Zahlungen als Excel-/Buchhaltungs-kompatible CSV-Datei heruntergeladen.
 
+### 4.5 Manuelle Forderungen und Erlass
+
+- Manuelle Forderungen lassen sich unter **Forderungen → Hinzufügen** im Django-Admin
+  anlegen; Betrag und Zeitraum werden geprüft.
+- Zahlungen immer im Kassier-Dashboard erfassen. Nullbeträge, negative Beträge,
+  Überzahlungen und Zahlungen auf erledigte Forderungen werden abgewiesen.
+- Bestehende Forderungen und Zahlungen sind im Admin gegen direkte Änderungen
+  geschützt. Ein Kassier kann offene, vollständig unbezahlte Forderungen mit der
+  Aktion **Offene Forderungen erlassen** erlassen; der Vorgang wird protokolliert.
+- Teilzahlungen zählen zum Zahlungseingang und reduzieren den offenen Restbetrag.
+
 ---
 
 ## 5. Platzverwaltung und Buchungen (Platzwart)
@@ -142,10 +165,15 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 3. Start- und Endzeit angeben sowie eine optionale Notiz (z.B. *„Plätze nach Unwetter gesperrt“*).
 4. Auf **„Sperre eintragen“** klicken.
 
+Wiederkehrende Sperren sind derzeit nicht implementiert. Einzelne Termine separat
+eintragen; eine angegebene Wiederholungsregel wird ausdrücklich zurückgewiesen.
+
 ### 5.3 Automatische Stornierung & Benachrichtigung
 - Wenn eine Sperre über bereits bestehende Buchungen gelegt wird, **storniert das System diese Buchungen automatisch**.
-- Angefallene Gastgebühren werden sofort storniert.
-- Die betroffenen Spieler erhalten sofort eine verständliche E-Mail mit der Begründung des Platzwarts.
+- Noch offene, unbezahlte Forderungen werden storniert. Bereits bezahlte oder
+  teilweise bezahlte Forderungen bleiben bestehen und müssen vom Kassier geprüft werden.
+- Die betroffenen Spieler erhalten nach erfolgreicher Speicherung eine E-Mail
+  mit der Begründung des Platzwarts.
 
 ---
 
@@ -182,6 +210,10 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 ### 7.2 Anmeldungen und Warteliste
 - Spieler melden sich online mit einem Klick an.
 - Bei Doppelbewerben wählt der Spieler seinen Partner aus; die Anmeldung wird aktiv, sobald der Partner bestätigt.
+- Der gewählte Partner bestätigt auf der Turnierdetailseite. Dort kann eine eigene
+  Anmeldung vor Anmeldeschluss auch zurückgezogen werden.
+- Unbestätigte Partneranmeldungen verfallen nach Anmeldeschluss durch den stündlichen
+  Hintergrundjob; offene Startgebühren werden dabei storniert.
 - Ist die maximale Teilnehmerzahl erreicht, setzt das System weitere Spieler automatisch auf die **Warteliste**. Zieht ein Spieler zurück, rückt der nächste Wartelisten-Spieler automatisch nach.
 
 ### 7.3 Auslosung durchführen
@@ -196,6 +228,8 @@ Die Plattform unterscheidet zwischen folgenden Rollen:
 4. Bei Round-Robin wird die Tabelle in Echtzeit nach Siegen, Satzdifferenz und Game-Differenz aktualisiert.
 
 ### 7.5 Plätze für Turnierspiele reservieren
+- Als Turnierleiter auf der Turnierdetailseite beim Spiel Platz, Startzeit und Dauer
+  auswählen und den Termin speichern. Spieleinträge im Django-Admin sind zur Einsicht geschützt.
 - Bei Zuweisung eines Platzes und Termins zu einem Spiel erzeugt das System automatisch eine Platzsperre (*Turnier*).
 - Gibt es eine Terminkollision mit einer Buchung, warnt das System sofort.
 
@@ -234,28 +268,35 @@ bash update.sh
 1. Es lädt den neuesten Quellcode herunter.
 2. Es baut das neue Anwendungsimage und prüft die Konfiguration.
 3. Es stoppt die Anwendungsdienste für ein Wartungsfenster.
-4. Es führt Datenbank-Migrationen aus und sammelt versionierte CSS-/JavaScript-Dateien.
+4. Es sichert Datenbank und Docker-Medien, führt Migrationen aus und sammelt versionierte CSS-/JavaScript-Dateien.
 5. Es startet Django und Nginx und prüft die tatsächliche HTTP-Auslieferung.
-6. Erst nach erfolgreicher Prüfung startet es die Hintergrunddienste und den Tunnel.
+6. Es prüft die Hintergrunddienste und die Tunnelverbindung; bei gesetzter `PUBLIC_SITE_URL` zusätzlich die öffentliche HTTPS-Auslieferung.
 
 Während des Wartungsfensters ist die Webseite kurzzeitig nicht erreichbar.
 Vor einem Update müssen Datenbank und das Docker-Volume `media_prod_volume`
-gesichert werden. Bei einem Fehler bricht das Skript ab; ein fehlgeschlagenes
+gesichert werden. Eine Sicherung erstellt das Skript vor Migrationen selbst; beide
+Dateien anschließend außerhalb des Servers aufbewahren. Bei einem Fehler bricht das Skript ab; ein fehlgeschlagenes
 Update wird nicht als erfolgreich gemeldet. Details: [DEPLOYMENT.md](DEPLOYMENT.md).
+
+Der geprüfte Code-Stand benötigt drei neue Migrationen; der Update-Ablauf führt
+sie automatisch aus. Vorher bestehende E-Mail-Dubletten prüfen und den bisherigen
+`DJANGO_SECRET_KEY` beibehalten. Dieser Schlüssel schützt jetzt auch SEPA-IBANs.
+Die `.env` mit ihren Schlüsseln separat geschützt sichern; ohne den passenden
+Schlüssel lassen sich verschlüsselte Bankdaten aus Backups nicht lesen.
 
 ### 9.2 Backups erstellen und wiederherstellen
 
 #### Backup erstellen:
 ```bash
-./scripts/backup.sh
+bash scripts/backup.sh
 ```
-Erstellt im Ordner `./backups/` eine komprimierte Sicherung der gesamten Datenbank und aller Medien-Uploads mit Zeitstempel.
+Erstellt im Ordner `./backups/` eine komprimierte Sicherung der Datenbank und des Docker-Medien-Volumes mit Zeitstempel. Beide Dateien gehören zusammen und müssen außerhalb des Servers aufbewahrt werden. Für ein zusammenpassendes Backup während der Sicherung keine Uploads/Änderungen zulassen; beim Deployment sind die Anwendungsdienste dafür gestoppt. Ein täglicher Termin muss auf dem Server eingerichtet werden.
 
 #### Wiederherstellung (Restore auf neuem System):
 ```bash
-./scripts/restore.sh backups/db_backup_JJJJMMTT_HHMMSS.sql.gz backups/media_backup_JJJJMMTT_HHMMSS.tar.gz
+bash scripts/restore.sh backups/db_backup_ZEITSTEMPEL.sql.gz backups/media_backup_ZEITSTEMPEL.tar.gz
 ```
-Stellt die Datenbank und alle hochgeladenen Bilder 1:1 wieder her.
+Vorher alle Anwendungsdienste stoppen; nur die Datenbank und Redis dürfen weiterlaufen. Das Skript prüft die Archive und stellt Datenbank und Medien im Docker-Volume wieder her. Anschließend `bash scripts/deploy.sh` ausführen. Ein Restore auf einem leeren, getrennten System ist regelmäßig zu testen; vorhandene zusätzliche Medien werden nicht gelöscht. Vollständige Schritte: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### 9.3 Cloudflare Tunnel & Sicherheit
 - Die Vereins-Webseite ist über einen verschlüsselten Cloudflare Tunnel angebunden.

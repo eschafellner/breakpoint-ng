@@ -5,7 +5,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError
 from apps.core.models import TimeStampedModel
+
 
 class Charge(TimeStampedModel):
     class Kind(models.TextChoices):
@@ -43,7 +45,7 @@ class Charge(TimeStampedModel):
     due_date = models.DateField(_("Fälligkeitsdatum"))
     period_start = models.DateField(_("Periode von"), null=True, blank=True)
     period_end = models.DateField(_("Periode bis"), null=True, blank=True)
-    
+
     status = models.CharField(
         _("Zahlungsstatus"),
         max_length=20,
@@ -51,7 +53,7 @@ class Charge(TimeStampedModel):
         default=Status.OPEN,
     )
     description = models.CharField(_("Verwendungszweck / Beschreibung"), max_length=255)
-    
+
     # Generic FK to the originating entity (e.g. Booking, Entry, Membership)
     content_type = models.ForeignKey(
         ContentType,
@@ -86,6 +88,7 @@ class Charge(TimeStampedModel):
         diff = self.amount - self.total_paid
         return max(diff, Decimal("0.00"))
 
+
 class Payment(TimeStampedModel):
     class Method(models.TextChoices):
         TRANSFER = "TRANSFER", _("Überweisung")
@@ -114,7 +117,9 @@ class Payment(TimeStampedModel):
         related_name="recorded_payments",
         verbose_name=_("Erfasst von"),
     )
-    reference = models.CharField(_("Zahlungsreferenz / Belegnummer"), max_length=100, blank=True)
+    reference = models.CharField(
+        _("Zahlungsreferenz / Belegnummer"), max_length=100, blank=True
+    )
 
     class Meta:
         verbose_name = _("Zahlung")
@@ -123,6 +128,7 @@ class Payment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.amount} € ({self.get_method_display()}) für #{self.charge_id}"
+
 
 class PriceRule(TimeStampedModel):
     class AppliesTo(models.TextChoices):
@@ -180,6 +186,25 @@ class PriceRule(TimeStampedModel):
         court_label = self.court.name if self.court else "Alle Plätze"
         return f"{court_label} - {self.get_applies_to_display()}: {self.price_per_hour} €/h | {self.price_per_person} €/Person"
 
+    def clean(self):
+        if len(self.weekday_mask) != 7 or set(self.weekday_mask) - {"0", "1"}:
+            raise ValidationError(
+                {
+                    "weekday_mask": _(
+                        "Die Wochentagsmaske muss sieben Nullen oder Einsen enthalten."
+                    )
+                }
+            )
+        if self.time_from and self.time_to and self.time_from >= self.time_to:
+            raise ValidationError(
+                {"time_to": _("Das Tarifende muss nach dem Beginn liegen.")}
+            )
+        for field in ("price_per_hour", "price_per_person"):
+            value = getattr(self, field)
+            if value is not None and Decimal(value) < 0:
+                raise ValidationError({field: _("Preise dürfen nicht negativ sein.")})
+
+
 class BookingExtra(TimeStampedModel):
     class Unit(models.TextChoices):
         PER_HOUR = "PER_HOUR", _("Pro Stunde")
@@ -229,6 +254,13 @@ class BookingExtra(TimeStampedModel):
     def __str__(self):
         return f"{self.name} ({self.get_mode_display()}) – M: {self.price_member} €, G: {self.price_guest} €"
 
+    def clean(self):
+        for field in ("price_member", "price_guest"):
+            value = getattr(self, field)
+            if value is not None and Decimal(value) < 0:
+                raise ValidationError({field: _("Preise dürfen nicht negativ sein.")})
+
+
 class BookingExtraLine(TimeStampedModel):
     booking = models.ForeignKey(
         "courts.Booking",
@@ -241,8 +273,12 @@ class BookingExtraLine(TimeStampedModel):
         on_delete=models.PROTECT,
         verbose_name=_("Extra"),
     )
-    quantity = models.DecimalField(_("Menge"), max_digits=6, decimal_places=2, default=Decimal("1.00"))
-    unit_price = models.DecimalField(_("Einzelpreis (€) [eingefroren]"), max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(
+        _("Menge"), max_digits=6, decimal_places=2, default=Decimal("1.00")
+    )
+    unit_price = models.DecimalField(
+        _("Einzelpreis (€) [eingefroren]"), max_digits=10, decimal_places=2
+    )
     total = models.DecimalField(_("Gesamtbetrag (€)"), max_digits=10, decimal_places=2)
 
     class Meta:

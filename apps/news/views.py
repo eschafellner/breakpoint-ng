@@ -1,13 +1,14 @@
 from django.core.paginator import Paginator
 from django.http import Http404
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render
 from .selectors import get_published_articles, get_article_by_slug, get_categories
+
 
 def article_list_view(request):
     """Archivseite mit Paginierung und Filter nach Kategorie (N-6)."""
     category_slug = request.GET.get("kategorie")
     articles_qs = get_published_articles(user=request.user, category_slug=category_slug)
-    categories = get_categories()
+    categories = get_categories(user=request.user)
 
     paginator = Paginator(articles_qs, 9)
     page_number = request.GET.get("page")
@@ -23,6 +24,7 @@ def article_list_view(request):
             "current_category": category_slug,
         },
     )
+
 
 def article_detail_view(request, slug):
     """Detailansicht eines Artikels (404 bei Berechtigungs-/Veröffentlichungskonflikt)."""

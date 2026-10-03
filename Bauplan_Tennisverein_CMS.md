@@ -15,7 +15,9 @@ Eine Web-Anwendung für einen Tennisverein mit vier Kernmodulen:
 | **Turniere**     | Turniere/Ortsmeisterschaften mit Anmeldung, Auslosung, Ergebnissen                                 |
 
 
-**Tech-Stack (verbindlich):** Python 3.12+, **Django 6.0 (`Django>=6.0,<6.1`)**, PostgreSQL 16, Django-Templates + HTMX + Tailwind CSS, Celery + Redis (E-Mails, Erinnerungen), Docker Compose, Cloudflare Tunnel, pytest.
+**Tech-Stack (verbindlich):** Python 3.12+, **Django 6.0 (`Django>=6.0,<6.1`)**, PostgreSQL 16, Django-Templates + HTMX + CSS, Gunicorn hinter **Nginx**, Celery + Redis (E-Mails, Erinnerungen), Docker Compose, Cloudflare Tunnel, pytest. Aktuell liegt fertiges CSS unter `static/css/styles.css`; ein Tailwind-Build ist erst bei einer späteren Einführung erforderlich.
+
+**Deployment-Entscheidung (Stand 02.10.2026):** Statische Dateien und freigegebene Medien werden durch Nginx ausgeliefert. Der zuvor diskutierte WhiteNoise-Ansatz wird nicht eingesetzt; es gibt keine WhiteNoise-Abhängigkeit oder -Middleware. Schritt-für-Schritt-Anleitung: [DEPLOYMENT.md](DEPLOYMENT.md). Prüfstand und verbleibende Betriebsprüfungen: [DEPLOYMENT_PRUEFUNG.md](DEPLOYMENT_PRUEFUNG.md).
 
 > **Versionsstrategie Django:** Start auf Django 6.0. Das Upgrade auf **Django 6.2 LTS** (erwartet April 2027, Support bis ca. 2030) ist fest eingeplant (siehe AP-11). Django 5.2 LTS ist die Rückfalloption, falls ein benötigtes Paket Django 6 nicht unterstützt. Versionen immer exakt in `pyproject.toml` pinnen und ein Lockfile verwenden (`uv.lock` oder `requirements.lock`).
 
@@ -98,7 +100,7 @@ Rollen werden als Django-Gruppen umgesetzt; eine Person kann mehrere Rollen habe
   - Mitglieder zahlen für den Platz 0 €, außer für Extras mit Mitgliederpreis > 0. Spielt ein Mitglied mit einem Gast, wird eine **Gastgebühr pro Gastspieler** fällig.
   - Preisänderungen gelten nur für neue Buchungen; der Preis wird bei der Buchung eingefroren.
 - **P-8** Gebühren werden als **Buchungsforderung** gespeichert. Bezahlung **ausschließlich bar oder per Überweisung**; der Kassier markiert Zahlungen als bezahlt. **Keine Online-Zahlung.** Bestätigungs-E-Mail und Mitgliederbereich zeigen Bankverbindung und Verwendungszweck (aus `ClubSettings`).
-- **P-9** Doppelbuchungen werden auf Datenbankebene verhindert (Exclusion-Constraint in PostgreSQL).
+- **P-9** Doppelbuchungen werden durch atomare Buchungsservices mit PostgreSQL-Zeilensperren verhindert. Eine zusätzliche Exclusion-Constraint bleibt eine mögliche Härtung; sie ist im aktuellen Stand nicht implementiert.
 - **P-10** Bestätigungs- und Erinnerungs-E-Mail, Storno-Benachrichtigung bei Sperre durch den Platzwart.
 - **P-11** Öffentliche Belegungsansicht ohne Namen („belegt“).
 
@@ -157,13 +159,17 @@ Native App, Mannschafts-/Ligabetrieb (Anbindung an Verbandssysteme), Trainerbuch
 flowchart LR
     U[Browser / Smartphone] --> CF[Cloudflare DNS + HTTPS]
     CF -.Tunnel.-> T[cloudflared]
-    T --> N[Caddy/Nginx]
+    T -->|http://nginx:80| N[Nginx]
     N --> D[Django 6 + Gunicorn]
     D --> P[(PostgreSQL)]
     D --> R[(Redis)]
     R --> C[Celery Worker + Beat]
     C --> M[SMTP E-Mail]
-    D --> S[Media-Storage lokal]
+    PREP[prepare: migrate + collectstatic] --> ST[Static-Volume]
+    N -->|CSS / JavaScript lesen| ST
+    D -->|Uploads schreiben| S[Media-Volume]
+    D -.Berechtigung / X-Accel-Redirect.-> N
+    N -->|freigegebene Dateien lesen| S
 ```
 
 ### 2.2 Projektstruktur
@@ -181,10 +187,15 @@ tennisclub/
 │   └── tournaments/        # Turniere, Konkurrenzen, Anmeldungen, Spiele
 ├── templates/              # base.html, Komponenten (Partials für HTMX)
 ├── static/
+├── deploy/nginx/default.conf # Proxy, MIME-Typen, Cache, interne Medienauslieferung
+├── scripts/                # deploy, prepare, HTTP-/Tunnel-Prüfung, Backup/Restore
 ├── tests/                  # pro App, pytest + factory_boy
 ├── docker-compose.yml
+├── docker-compose.prod.yml # DB, Redis, prepare, Web, Nginx, Celery, Tunnel
 ├── Dockerfile
 ├── pyproject.toml
+├── DEPLOYMENT.md            # Erstinstallation, Updates, Wiederherstellung
+├── DEPLOYMENT_PRUEFUNG.md   # aktueller Prüfstand und Grenzen
 └── README.md
 ```
 
@@ -202,8 +213,15 @@ tennisclub/
 
 - **Variante A – eigener Server** (vServer oder Vereinsrechner) oder **Variante B – lokaler Rechner** im Vereinsheim. In beiden Fällen läuft alles per **Docker Compose**.
 - **Cloudflare Tunnel** (`cloudflared` als eigener Container) veröffentlicht die Seite unter der Vereinsdomain – **ohne offene Ports** am Router und ohne feste IP. HTTPS übernimmt Cloudflare.
+- **Nginx ist verbindlicher Reverse Proxy** vor Gunicorn. Das im Cloudflare-Dashboard konfigurierte Tunnelziel ist `http://nginx:80`, nicht `http://web:8000`. Diese Einstellung wird bei einem tokenbasierten Tunnel außerhalb der Compose-Datei verwaltet.
+- `/static/` wird aus `static_prod_volume` ausgeliefert. `ManifestStaticFilesStorage` erzeugt Hash-Dateinamen; Nginx setzt passende MIME-Typen, Gzip und Cache-Header. `collectstatic` ist vor dem Webstart verpflichtend. Nginx und Web lesen dieses Volume nur.
+- `/media/` geht zur Berechtigungsprüfung an Django. Vereinslogos sind öffentlich; Newsbilder übernehmen die Veröffentlichungs- und Mitgliedersichtbarkeit; Profilbilder sind nur für Besitzer/Staff zugänglich. Erst danach liefert Nginx über einen `internal`-Pfad die Datei aus. Unbekannte Dateien bleiben gesperrt. Medien werden mit `private, no-store` ausgeliefert.
 - Django hinter dem Tunnel: `SECURE_PROXY_SSL_HEADER`, `CSRF_TRUSTED_ORIGINS` und `ALLOWED_HOSTS` auf die Vereinsdomain setzen; echte Client-IP aus `CF-Connecting-IP` lesen (wichtig für Rate-Limiting).
 - Tunnel-Token und Zugangsdaten nur in `.env`, nie im Repository.
+- **Ein gemeinsamer Ablauf** für Erstdeployment (`bash scripts/deploy.sh`) und Updates (`bash update.sh`): Konfiguration prüfen → Image bauen/Proxy-Images laden → DB/Redis prüfen → Anwendungsdienste stoppen → DB-/Medien-Backup → `prepare` mit Migrationen/`collectstatic` → Web/Nginx samt HTTP-Test → Celery samt Healthchecks → Tunnel samt `/ready`-Prüfung → optionale öffentliche HTTPS-Prüfung über `PUBLIC_SITE_URL`.
+- Der einmalige Compose-Dienst `prepare` muss erfolgreich beendet sein, bevor Web startet; Nginx wartet auf den Web-Healthcheck. Updates erstellen `prepare` ausdrücklich neu. Während Migrationen und Containerwechsel besteht ein Wartungsfenster. Bei Fehlern nach Beginn bleibt der Tunnel gestoppt; ein Deployment-Lock verhindert gleichzeitige Skriptläufe.
+- Celery Beat besitzt einen persistenten Scheduler-Stand und einen Produktionszeitplan: abgelaufene Mitgliedschaften täglich um 00:05 Uhr, Buchungserinnerungen stündlich zur vollen Stunde, jeweils in `CELERY_TIMEZONE`. Es läuft genau eine Beat-Instanz.
+- Backups sichern PostgreSQL mit den Container-Zugangsdaten und das tatsächliche `media_prod_volume`. Restore prüft Archive und stoppt bei SQL-Fehlern; Anwendungsdienste müssen vorher gestoppt werden. Ein Restore auf einem leeren, getrennten System sowie externe Backup-Ablage sind regelmäßig im Betrieb zu prüfen.
 - Optional: Django-Admin zusätzlich mit **Cloudflare Access** schützen.
 - Variante B: Strom- oder Internetausfall bedeutet Ausfall der Seite. Backups müssen **außerhalb** des Rechners liegen (verschlüsselt in Cloud-Speicher oder auf NAS).
 
@@ -262,7 +280,7 @@ erDiagram
 - `OpeningHours`: court, season, weekday, open\_time, close\_time, slot\_minutes.
 - `Season`: name, start\_date, end\_date.
 - `Blocking`: court, start, end, reason {TRAINING, TEAM\_MATCH, TOURNAMENT, MAINTENANCE, WEATHER}, note, recurrence\_rule (optional), created\_by.
-- `Booking`: court, booked\_by, start, end, status {CONFIRMED, CANCELLED}, cancelled\_at, total\_price. **PostgreSQL ExclusionConstraint** auf (court, tstzrange(start,end)) für bestätigte Buchungen.
+- `Booking`: court, booked\_by, start, end, status {CONFIRMED, CANCELLED}, cancelled\_at, total\_price, reminder\_sent\_at. Änderungen laufen über transaktionale Services mit Benutzer-/Platz-Zeilensperren; direkte Admin-Änderungen sind gesperrt. Eine zusätzliche PostgreSQL-Exclusion-Constraint ist noch nicht umgesetzt.
 - `BookingParticipant`: booking, user (nullable), guest\_name (falls ohne Konto), is\_guest.
 - `BookingRules` (Singleton in `core.ClubSettings`): advance\_days\_member, advance\_days\_guest, max\_open\_bookings, max\_duration\_minutes, free\_cancel\_hours.
 
@@ -284,7 +302,7 @@ erDiagram
 | ------------------- | -------------------------------------------------------------------------------------- |
 | **Architekt-Agent** | Setzt Grundgerüst, prüft Einhaltung der Architekturregeln, reviewt PRs anderer Agenten |
 | **Backend-Agent**   | Modelle, Services, Migrationen, Admin, Celery-Tasks                                    |
-| **Frontend-Agent**  | Templates, HTMX-Interaktionen, Tailwind, Barrierefreiheit                              |
+| **Frontend-Agent**  | Templates, HTMX-Interaktionen, CSS (Tailwind optional), Barrierefreiheit               |
 | **Test-Agent**      | Schreibt Tests anhand der Akzeptanzkriterien *vor bzw. parallel* zur Implementierung   |
 | **DevOps-Agent**    | Docker, CI (GitHub Actions/GitLab CI), Deployment, Backups                             |
 
@@ -330,7 +348,7 @@ gantt
 
 #### AP-01 – Projektgrundgerüst *(DevOps + Architekt)*
 
-**Aufgaben:** Django-Projekt nach Struktur 2.2, Settings-Split, PostgreSQL, Redis, Celery, Docker Compose, pytest + factory\_boy, ruff/black/mypy, pre-commit, CI-Pipeline, Basis-Template mit Tailwind + HTMX, `core.ClubSettings` (Singleton: Vereinsname, Logo, Kontakt, Bankdaten, Buchungsregeln), Impressum/Datenschutz-Seiten (Inhalte im Admin pflegbar).
+**Aufgaben:** Django-Projekt nach Struktur 2.2, Settings-Split, PostgreSQL, Redis, Celery, Docker Compose, pytest + factory\_boy, ruff/black/mypy, pre-commit, CI-Pipeline, Basis-Template mit CSS + HTMX (Tailwind-Build nur bei späterer Einführung), `core.ClubSettings` (Singleton: Vereinsname, Logo, Kontakt, Bankdaten, Buchungsregeln), Impressum/Datenschutz-Seiten (Inhalte im Admin pflegbar).
 **Akzeptanzkriterien:**
 
 - `docker compose up` startet App, DB, Redis, Worker; Startseite erreichbar.
@@ -407,7 +425,7 @@ gantt
 - Gast bucht → Forderung `COURT_FEE` gemäß Gastpreis.
 - Extras: Halle wird automatisch berechnet, Flutlicht nur bei Auswahl; ein im Admin neu angelegtes Extra erscheint ohne Codeänderung in der Buchungsmaske.
 - Preisänderung im Admin ändert bestehende Buchungen nicht.
-- Zwei gleichzeitige Buchungsversuche auf denselben Slot → genau einer erfolgreich (Test mit Datenbank-Constraint).
+- Zwei gleichzeitige Buchungsversuche auf denselben Slot → genau einer erfolgreich (echter PostgreSQL-Paralleltest mit Zeilensperren); parallele Buchungen auf verschiedenen Plätzen dürfen das Benutzerkontingent nicht überschreiten.
 - Buchungsregeln (Vorlauf, max. offene Buchungen, max. Dauer) werden durchgesetzt, Fehlermeldungen auf Deutsch.
 - Stornierung innerhalb der Frist storniert auch die zugehörige Forderung; danach bleibt sie bestehen.
 - Erinnerungs-E-Mail 24 h vorher (Celery).
@@ -438,13 +456,16 @@ gantt
 
 #### AP-10 – Betrieb und Härtung *(DevOps + Test)*
 
-**Aufgaben:** Produktions-Settings, `docker-compose.prod.yml` mit `cloudflared`-Container (Abschnitt 2.4), Logging, tägliche Backups mit Restore-Test (Ablage außerhalb des Servers), Sicherheits-Check (`manage.py check --deploy`), Lasttest, Barrierefreiheits-Prüfung (axe), Seed-Skript mit Demodaten, **Admin-Handbuch für den Verein** (Mitglieder freischalten, Beitragslauf, Zahlungen erfassen, Gastgebühren/Extras pflegen, Updates einspielen, Backup zurückspielen) und Update-Skript `./update.sh`.
+**Aufgaben:** Produktions-Settings, `docker-compose.prod.yml` mit Nginx, Gunicorn, einmaligem `prepare` und `cloudflared` (Abschnitt 2.4), Logging, tägliche Backups der DB und Docker-Medien mit Restore-Test (Ablage außerhalb des Servers), Sicherheits-Check (`manage.py check --deploy`), Lasttest, Barrierefreiheits-Prüfung (axe), Seed-Skript mit Demodaten ausschließlich für Entwicklung, **Admin-Handbuch für den Verein**, Schritt-für-Schritt-Anleitung `DEPLOYMENT.md`, Prüfbericht `DEPLOYMENT_PRUEFUNG.md`, Erstdeployment über `bash scripts/deploy.sh` und Updates über `bash update.sh`.
 **Akzeptanzkriterien:**
 
 - Seite ist über Cloudflare Tunnel unter der Vereinsdomain per HTTPS erreichbar, ohne offenen Port am Server/Router.
 - Rate-Limiting verwendet die echte Client-IP (`CF-Connecting-IP`).
+- CSS einschließlich Django-Admin wird bei `DEBUG=False` mit HTTP 200 und `text/css` ausgeliefert; versionierte URLs, Gzip, fehlende Dateien und geschützte Bilder werden mit echtem Nginx getestet.
+- Updates sichern vor Migrationen Datenbank und Docker-Medien, prüfen Hintergrunddienste/Tunnel und melden bei Fehlern keinen Erfolg. HTTP-MIME-Fehler verhindern die Freigabe.
 - Eine Person ohne Programmierkenntnisse kann mit dem Handbuch ein Update und eine Wiederherstellung durchführen.
 - `check --deploy` ohne Warnungen.
+- Prüfgrenze: Ein lokaler HTTP-/Skripttest ersetzt keinen vollständigen Docker-Start oder echten DB-Restore. TLS/HSTS-Warnungen hinter Cloudflare müssen durch geprüfte Edge-Konfiguration oder passende Django-Einstellungen erledigt werden; offene Punkte stehen im Prüfbericht.
 - Restore aus Backup auf leerem System funktioniert.
 - axe-Prüfung der Hauptseiten ohne kritische Fehler.
 - Demodaten: 50 Mitglieder, 10 Gäste, 4 Plätze, 2 Turniere.
@@ -496,12 +517,43 @@ erfüllten Akzeptanzkriterien (Checkliste), Testergebnis und offenen Punkten.
 | Frontend                                | `django-htmx`, `django-tailwind` (oder Tailwind CLI)             |
 | Formulare                               | `django-crispy-forms` + `crispy-tailwind`                        |
 | Hintergrundjobs                         | `celery`, `django-celery-beat`                                   |
+| Produktions-Webserver                   | `gunicorn` + Nginx-Container; Django `ManifestStaticFilesStorage`, kein WhiteNoise |
 | Rate-Limiting                           | `django-axes`                                                    |
 | Audit-Log                               | `django-simple-history`                                          |
 | Import/Export                           | `django-import-export`                                           |
 | Wiederkehrende Termine                  | `python-dateutil` (rrule)                                        |
-| Verschlüsselung (IBAN)                  | `django-fernet-encrypted-fields`                                 |
+| Verschlüsselung (IBAN)                  | umgesetzt mit `cryptography`/Fernet und eigenem Django-Feld; Rotation über `rotate_sepa_keys` |
 | Tests                                   | `pytest-django`, `factory_boy`, `freezegun`                      |
 | Qualität                                | `ruff`, `black`, `mypy`, `django-stubs`                          |
+
+## 7. Prüfung des umgesetzten Codes (03.10.2026)
+
+Der ursprüngliche Bauplan beschreibt die Zielanforderungen. Die nachträgliche
+Prüfung hat Fehler und einzelne Funktionslücken im zuvor als fertig behandelten
+Stand gefunden. Ergebnisse und Nachweise stehen in [CODE_PRUEFUNG.md](CODE_PRUEFUNG.md).
+
+- Produktion: Cloudflare Tunnel → Nginx → Gunicorn/Django; statische Dateien über
+  `prepare`/`collectstatic`, geschützte Medien nach Django-Prüfung per `X-Accel-Redirect`.
+  WhiteNoise ist durch diese Architektur ersetzt. Vollständige Anleitung:
+  [DEPLOYMENT.md](DEPLOYMENT.md).
+- Mitgliederrechte berücksichtigen Status, Gültigkeitszeitraum und bestätigte,
+  aktive Konten. Rollen erhalten passende Django-Modellberechtigungen.
+- Transaktionen mit PostgreSQL-Zeilensperren schützen Buchungen, Kontingente,
+  Zahlungen, Beitragsläufe, Mitgliedsnummern und Turnierkapazitäten. Sieben Tests
+  mit parallelen Zugriffen prüfen diese Regeln; eine Buchungs-Exclusion-Constraint
+  ist weiterhin nicht implementiert.
+- Buchungsvorschau und Speicherung verwenden dieselbe Preisberechnung; Tarife,
+  Gastspieler und platzbezogene Extras werden serverseitig geprüft.
+- SEPA-IBANs werden mit `cryptography`/Fernet verschlüsselt. Migration, Schlüsselrotation
+  und passende Schlüssel beim Restore sind Teil des Betriebsablaufs.
+- Partnerbestätigung, Rückzug und Spielterminierung besitzen geschützte Oberflächen;
+  unbestätigte Partneranmeldungen verfallen per Celery Beat.
+- Wiederkehrende Platzsperren sind entgegen der ursprünglichen Anforderung noch
+  nicht umgesetzt. Wiederholungsregeln werden ausdrücklich abgewiesen. Gruppen-
+  und Hauptrunden-K.-o. bleiben Phase 2.
+- PostgreSQL: 212 Tests bestanden; SQLite: 205 bestanden, sieben PostgreSQL-
+  Paralleltests übersprungen. Die Geschäftsservices erreichen 89 % Zeilenabdeckung;
+  der Anwendungscode ohne Migrationen 81 %. Dies ersetzt weder die offenen
+  Betriebsprüfungen noch eine vollständige Last- oder Barrierefreiheitsprüfung.
 
 
