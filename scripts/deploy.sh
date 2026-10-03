@@ -2,6 +2,17 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
+skip_public=0
+case "${1:-}" in
+    "") ;;
+    --skip-public-check) skip_public=1 ;;
+    *) echo "Verwendung: bash scripts/deploy.sh [--skip-public-check]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    echo "Fehler: Zu viele Argumente." >&2
+    exit 2
+fi
+
 compose=(docker compose -f docker-compose.prod.yml)
 if ! mkdir .deployment-lock 2>/dev/null; then
     echo "Fehler: Ein Deployment läuft bereits (.deployment-lock)." >&2
@@ -12,7 +23,8 @@ cleanup() {
     result=$?
     if [ "$result" -ne 0 ] && [ "$maintenance_started" -eq 1 ]; then
         "${compose[@]}" stop cloudflared || true
-        echo "Deployment fehlgeschlagen. Tunnel bleibt gestoppt; Logs prüfen." >&2
+        echo "Deployment fehlgeschlagen. Tunnel wurde zum Stoppen aufgefordert; Status und Logs prüfen." >&2
+        echo "Diagnose: docker compose -f docker-compose.prod.yml logs --tail=100 prepare web nginx cloudflared" >&2
     fi
     rmdir .deployment-lock
     exit "$result"
@@ -22,6 +34,9 @@ trap cleanup EXIT
 
 echo "-> Baue das Anwendungsimage neu..."
 "${compose[@]}" build prepare
+
+echo "-> Prüfe öffentliche Domain vor dem Wartungsfenster..."
+"${compose[@]}" run --rm --no-deps -T --entrypoint python prepare scripts/check_deployment.py --validate-config
 
 echo "-> Lade Nginx- und Tunnel-Images vor dem Wartungsfenster..."
 "${compose[@]}" pull nginx cloudflared
@@ -58,5 +73,13 @@ echo "-> Starte Hintergrunddienste und Cloudflare Tunnel..."
 "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 celery_worker celery_beat
 "${compose[@]}" up -d --no-deps --force-recreate cloudflared
 "${compose[@]}" exec -T web python scripts/check_tunnel.py
-"${compose[@]}" exec -T web python scripts/check_deployment.py --public
-echo "=== Deployment erfolgreich geprüft ==="
+echo "-> Prüfe das Tunnelziel aus dem Netzwerk von cloudflared..."
+"${compose[@]}" run --rm --no-deps -T tunnel_probe
+if [ "$skip_public" -eq 1 ]; then
+    echo "=== Lokale Prüfungen bestanden; öffentliche Website NICHT geprüft ==="
+    echo "Vereinsadresse im Browser prüfen. Ein Healthy-Tunnel bestätigt keine erreichbare Website."
+else
+    echo "-> Prüfe öffentliche HTTPS-Adresse über Cloudflare..."
+    "${compose[@]}" exec -T web python scripts/check_deployment.py --public
+    echo "=== Deployment erfolgreich geprüft ==="
+fi

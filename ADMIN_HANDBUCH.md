@@ -270,7 +270,7 @@ bash update.sh
 3. Es stoppt die Anwendungsdienste für ein Wartungsfenster.
 4. Es sichert Datenbank und Docker-Medien, führt Migrationen aus und sammelt versionierte CSS-/JavaScript-Dateien.
 5. Es startet Django und Nginx und prüft die tatsächliche HTTP-Auslieferung.
-6. Es prüft die Hintergrunddienste und die Tunnelverbindung; bei gesetzter `PUBLIC_SITE_URL` zusätzlich die öffentliche HTTPS-Auslieferung.
+6. Es prüft die Hintergrunddienste, die Tunnelverbindung, den Netzwerkweg vom Tunnel zu Nginx und die öffentliche HTTPS-Auslieferung. `PUBLIC_SITE_URL` muss die eigene Vereinsadresse enthalten.
 
 Während des Wartungsfensters ist die Webseite kurzzeitig nicht erreichbar.
 Vor einem Update müssen Datenbank und das Docker-Volume `media_prod_volume`
@@ -301,6 +301,9 @@ Vorher alle Anwendungsdienste stoppen; nur die Datenbank und Redis dürfen weite
 ### 9.3 Cloudflare Tunnel & Sicherheit
 - Die Vereins-Webseite ist über einen verschlüsselten Cloudflare Tunnel angebunden.
 - Das Tunnelziel muss im Cloudflare-Dashboard auf `http://nginx:80` eingestellt sein.
+- „Healthy“ bei Cloudflare bestätigt nur die Tunnelverbindung. Die Website muss separat antworten; bei 502 die [Diagnoseanleitung](DEPLOYMENT.md#11-fehler-diagnostizieren) verwenden.
+- Der Connector läuft im Compose-Projekt. Zusätzliche alte Connector-Instanzen auf anderen Rechnern können ebenfalls Anfragen erhalten und müssen geprüft werden.
+- Bei einer absichtlich durch Cloudflare Access geschützten Website `bash update.sh --skip-public-check` verwenden; danach die Vereinsadresse im angemeldeten Browser prüfen. Die Ausgabe kennzeichnet die fehlende öffentliche Prüfung ausdrücklich.
 - Nginx liefert die Web-Dateien aus; Django prüft vor der Bildauslieferung die Zugriffsrechte.
 - Es müssen **keine offenen Ports** am Router oder Vereinsheim-Internet freigeschaltet werden.
 - HTTPS-Zertifikate, Schutz vor DDoS-Angriffen und SSL-Verschlüsselung übernimmt Cloudflare automatisch.

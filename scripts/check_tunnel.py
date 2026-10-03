@@ -27,7 +27,7 @@ def wait_for_tunnel(base_url="http://cloudflared:2000", timeout=90, interval=2):
 if __name__ == "__main__":
     try:
         wait_for_tunnel()
-        print("OK: Cloudflare Tunnel ist verbunden")
+        print("OK: Cloudflare Tunnel ist verbunden (Website-Erreichbarkeit separat prüfen)")
     except RuntimeError as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

@@ -324,6 +324,21 @@ def test_nginx_transfers_authorized_images(
             assert error.value.code == 404
 
 
+@pytest.mark.django_db(transaction=True)
+def test_internal_probe_preserves_public_host_with_production_host_validation(
+    production_files, tmp_path, monkeypatch
+):
+    with nginx_proxy(production_files, tmp_path) as origin:
+        production_files.ALLOWED_HOSTS = ["tennis.example"]
+        # Docker's service hostname is deliberately not a permitted Django host.
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(origin + "/healthz/", headers={"Host": "nginx"}))
+        assert error.value.code == 400
+        monkeypatch.setenv("PUBLIC_SITE_URL", "https://tennis.example")
+        monkeypatch.setattr(sys, "argv", ["check_deployment.py", "--base-url", origin])
+        check_deployment()
+
+
 def test_http_check_rejects_html_disguised_as_stylesheet():
     from http.server import BaseHTTPRequestHandler, HTTPServer
 

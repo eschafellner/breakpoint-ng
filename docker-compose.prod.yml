@@ -139,6 +139,15 @@ services:
       nginx:
         condition: service_healthy
 
+  # One-shot diagnosis from cloudflared's network namespace, using our Python image.
+  # cloudflared's minimal image has no shell/curl. No host ports are required.
+  tunnel_probe:
+    <<: *app
+    profiles: ["diagnostics"]
+    restart: "no"
+    network_mode: "service:cloudflared"
+    command: ["python", "scripts/check_deployment.py", "--origin-only"]
+
 volumes:
   postgres_prod_data:
   redis_prod_data:

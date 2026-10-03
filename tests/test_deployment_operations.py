@@ -107,8 +107,11 @@ def test_production_beat_schedules_existing_tasks():
         CSRF_TRUSTED_ORIGINS="https://test.example",
         DB_PASSWORD="test-password",
         CLOUDFLARE_TUNNEL_TOKEN="test-token",
+        PUBLIC_SITE_URL="https://test.example",
     )
     command = compose + [
+        "--profile",
+        "diagnostics",
         "--env-file",
         str(root / ".env.example"),
         "-f",
@@ -124,6 +127,10 @@ def test_production_beat_schedules_existing_tasks():
         timeout=20,
     )
     services = json.loads(result.stdout)["services"]
+    assert services["tunnel_probe"]["network_mode"] == "service:cloudflared"
+    assert services["tunnel_probe"]["profiles"] == ["diagnostics"]
+    assert not services["cloudflared"].get("ports")
+    assert not services["nginx"].get("ports")
     for name in ["prepare", "web", "celery_worker", "celery_beat"]:
         assert (
             services[name]["environment"]["DJANGO_SECRET_KEY_FALLBACKS"]
@@ -171,6 +178,8 @@ def run_script(tmp_path, script, arguments, **flags):
         MOCK_WORKER_EXIT="0",
         MOCK_TUNNEL_EXIT="0",
         MOCK_PUBLIC_EXIT="0",
+        MOCK_CONFIG_EXIT="0",
+        MOCK_ORIGIN_EXIT="0",
     )
     env.update({name: str(value) for name, value in flags.items()})
     mock = r"""
@@ -182,6 +191,8 @@ docker() {
         *"--wait --wait-timeout 120 celery_worker celery_beat") return "$MOCK_WORKER_EXIT" ;;
         *"python scripts/check_tunnel.py") return "$MOCK_TUNNEL_EXIT" ;;
         *"python scripts/check_deployment.py --public") return "$MOCK_PUBLIC_EXIT" ;;
+        *"scripts/check_deployment.py --validate-config") return "$MOCK_CONFIG_EXIT" ;;
+        *"run --rm --no-deps -T tunnel_probe") return "$MOCK_ORIGIN_EXIT" ;;
         *"ps --status running --services") printf '%s\n' "$MOCK_RUNNING" ;;
         *pg_dump*) printf 'SELECT 1;\n'; return "$MOCK_DUMP_EXIT" ;;
         *"media_archive.py backup") cat "$MOCK_MEDIA_ARCHIVE" ;;
@@ -192,6 +203,13 @@ docker() {
     return 0
 }
 export -f docker
+git() {
+    case "$*" in
+        "status --porcelain"|"pull --ff-only") return 0 ;;
+        *) return 1 ;;
+    esac
+}
+export -f git
 bash "$@"
 """
     result = subprocess.run(
@@ -265,7 +283,8 @@ def test_restore_refuses_unsafe_or_failed_steps(tmp_path, scenario):
 
 
 @pytest.mark.parametrize(
-    "failure", ["MOCK_WORKER_EXIT", "MOCK_TUNNEL_EXIT", "MOCK_PUBLIC_EXIT"]
+    "failure",
+    ["MOCK_WORKER_EXIT", "MOCK_TUNNEL_EXIT", "MOCK_ORIGIN_EXIT", "MOCK_PUBLIC_EXIT"],
 )
 def test_deployment_failure_stops_tunnel_and_does_not_report_success(tmp_path, failure):
     result, commands = run_script(tmp_path, "scripts/deploy.sh", [], **{failure: 1})
@@ -273,3 +292,44 @@ def test_deployment_failure_stops_tunnel_and_does_not_report_success(tmp_path, f
     assert "Deployment erfolgreich geprüft".encode() not in result.stdout
     assert commands.splitlines()[-1].endswith("stop cloudflared")
     assert not (Path(__file__).resolve().parents[1] / ".deployment-lock").exists()
+
+
+def test_invalid_domain_fails_before_maintenance(tmp_path):
+    result, commands = run_script(tmp_path, "scripts/deploy.sh", [], MOCK_CONFIG_EXIT=1)
+    assert result.returncode != 0
+    assert "--validate-config" in commands
+    assert "stop cloudflared" not in commands
+    assert "pg_dump" not in commands
+    assert "force-recreate" not in commands
+
+
+@pytest.mark.parametrize("script", ["scripts/deploy.sh", "update.sh"])
+def test_skipping_public_check_requires_explicit_option_and_reports_limit(
+    tmp_path, script
+):
+    result, commands = run_script(
+        tmp_path, script, ["--skip-public-check"], MOCK_PUBLIC_EXIT=1
+    )
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert "--validate-config" in commands
+    assert "run --rm --no-deps -T tunnel_probe" in commands
+    assert "check_deployment.py --public" not in commands
+    assert "öffentliche Website NICHT geprüft".encode() in result.stdout
+    assert "Deployment erfolgreich geprüft".encode() not in result.stdout
+    assert "Update erfolgreich".encode() not in result.stdout
+
+
+def test_update_propagates_public_check_failure(tmp_path):
+    result, commands = run_script(tmp_path, "update.sh", [], MOCK_PUBLIC_EXIT=1)
+    assert result.returncode != 0
+    assert "check_deployment.py --public" in commands
+    assert "Update erfolgreich".encode() not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "arguments", [["--unknown"], ["--skip-public-check", "unexpected"]]
+)
+def test_bad_deploy_arguments_fail_before_docker(tmp_path, arguments):
+    result, commands = run_script(tmp_path, "scripts/deploy.sh", arguments)
+    assert result.returncode == 2
+    assert not commands

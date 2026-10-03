@@ -116,6 +116,7 @@ zuerst die Berechtigung; Nginx überträgt anschließend die Datei.
 ```bash
 # .env aus der Vorlage erstellen und Produktionswerte eintragen:
 cp .env.example .env
+# PUBLIC_SITE_URL=https://DEINE-DOMAIN sowie Hosts, CSRF-Origin und Token setzen.
 
 # Erstdeployment: Image bauen, Migrationen, collectstatic und HTTP-Prüfung:
 bash scripts/deploy.sh
@@ -125,6 +126,16 @@ bash scripts/deploy.sh
 `http://nginx:80` zeigen (bisher `http://web:8000`). Diese Änderung erfolgt im
 Cloudflare-Dashboard; die Compose-Datei kann sie bei einem tokenbasierten Tunnel
 nicht automatisch setzen.
+
+**„Healthy“ bestätigt die Verbindung zu Cloudflare, nicht die Erreichbarkeit
+der Website.** Der Tunnel muss im Compose-Projekt laufen; ein zusätzlich
+installierter Connector kann `nginx` nicht ohne Weiteres erreichen. Das Deployment
+prüft jetzt Domain-Konfiguration, den Netzwerkweg aus dem Tunnel-Container und
+die öffentliche HTTPS-Adresse. `PUBLIC_SITE_URL` ist dafür erforderlich.
+Bei Cloudflare Access ausdrücklich `bash scripts/deploy.sh --skip-public-check`
+verwenden und die Website anschließend im angemeldeten Browser prüfen.
+Die [Schritt-für-Schritt-Anleitung mit 502-Diagnose](DEPLOYMENT.md) erklärt die
+Dashboard-Einstellungen und erwarteten Ergebnisse.
 
 ### Wartung & Updates
 - Updates mit einem Befehl: `bash update.sh`

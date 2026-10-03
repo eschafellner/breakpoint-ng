@@ -4,6 +4,38 @@ Stand: 03.10.2026. Diese Anleitung gilt für die Produktion mit Docker,
 Nginx und Cloudflare Tunnel. Die Entwicklung verwendet weiterhin
 `docker-compose.yml` und den Django-Entwicklungsserver.
 
+## Zum Einstieg: Was muss miteinander verbunden sein?
+
+Alle Befehle in dieser Anleitung werden im Projektordner auf dem Server ausgeführt.
+Unter Linux dafür ein Terminal öffnen; unter Windows **Git Bash** verwenden.
+`DEINE-DOMAIN` oder `tennis.example` immer durch die eigene Vereinsdomain ersetzen.
+In `.env` gehören nur die Werte, keine Markdown-Zeichen wie Backticks.
+
+```mermaid
+flowchart LR
+    B[Browser] -->|HTTPS| C[Cloudflare]
+    C -->|verschlüsselte Tunnelverbindung| T[cloudflared im Docker-Projekt]
+    T -->|HTTP an nginx:80| N[Nginx]
+    N -->|HTTP an web:8000| W[Gunicorn / Django]
+    W --> D[(PostgreSQL)]
+```
+
+Ein **Container** ist ein getrennt laufender Dienst. **Nginx** nimmt Seitenaufrufe
+an und liefert unter anderem das Design aus. **Django** bearbeitet Vereinsdaten
+und Buchungen. **cloudflared** verbindet dieses Docker-Projekt mit Cloudflare.
+
+**„Healthy“ bei Cloudflare bestätigt die Tunnelverbindung, nicht die Website.**
+Die Verbindung zu Cloudflare steht, aber die Weiterleitung zum Webdienst kann
+scheitern. Cloudflare dokumentiert diese
+[Unterscheidung und die typischen 502-Ursachen](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/troubleshoot-tunnels/common-errors/).
+
+Bei einem aktuellen 502 zuerst [Abschnitt 11](#11-fehler-diagnostizieren) verwenden.
+Für eine neue Installation die folgenden Schritte der Reihe nach ausführen.
+Für den ersten Start genügen die Abschnitte **1 bis 7**. Bestehende Installationen
+werden nach der Einrichtung mit Abschnitt **8** aktualisiert. Die Abschnitte
+**9 und 10** behandeln Sicherung und Wiederherstellung; Abschnitt **13** ist für
+Entwickler gedacht.
+
 ## 1. Voraussetzungen prüfen
 
 Auf dem Server werden Git, Bash, gzip und Docker mit Linux-Containern sowie
@@ -27,6 +59,9 @@ Nur ein installiertes Compose-Programm ohne Docker-Daemon genügt nicht.
 Der Server benötigt ausgehenden Zugriff auf Paket-/Image-Registries,
 Cloudflare und den verwendeten SMTP-Server. Am Router sind keine eingehenden
 Portfreigaben nötig; die Produktions-Compose-Datei veröffentlicht keine Hostports.
+Eine ausgehende Firewall muss Cloudflare Tunnel auf Port **7844 über UDP und TCP**
+zulassen. UDP wird für QUIC, TCP für HTTP/2 verwendet; siehe
+[Cloudflare-Firewallanforderungen](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/).
 
 ## 2. Repository bereitstellen
 
@@ -70,7 +105,19 @@ Texteditor eintragen; Beispielwerte aus der Vorlage müssen ersetzt werden.
 | `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP-Anmeldung |
 | `DEFAULT_FROM_EMAIL` | Zulässige Absenderadresse, bei Anzeigenamen in Anführungszeichen |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Token des vorgesehenen Cloudflare Tunnels |
-| `PUBLIC_SITE_URL` | Empfohlen: `https://tennis.example`, für E-Mail-Links und den externen Test |
+| `PUBLIC_SITE_URL` | Für das Deployment erforderlich: eigene Adresse wie `https://tennis.example`, ohne Unterpfad |
+
+Beispiel für die drei zusammengehörigen Domain-Werte:
+
+```dotenv
+DJANGO_ALLOWED_HOSTS=tennis.example
+CSRF_TRUSTED_ORIGINS=https://tennis.example
+PUBLIC_SITE_URL=https://tennis.example
+```
+
+Wer auch `www.tennis.example` nutzt, trägt beide Domains in Hostliste und
+CSRF-Liste ein, jeweils durch Kommas getrennt. Die öffentliche Prüfung testet
+die eine Adresse aus `PUBLIC_SITE_URL`; weitere Hostnamen anschließend im Browser prüfen.
 
 Einen neuen Schlüssel kann man ohne lokale Python-Installation erzeugen:
 
@@ -84,11 +131,14 @@ lokale Entwicklung. Bei einem vorhandenen PostgreSQL-Volume verändert ein
 neuer `DB_PASSWORD`-Wert nicht automatisch das Passwort im Datenbankserver;
 eine Passwortänderung muss dort separat erfolgen.
 
-`PUBLIC_SITE_URL` kann leer bleiben, wenn Cloudflare Access den öffentlichen
-Zugang schützt. Dann wird der externe Test im angemeldeten Browser durchgeführt.
-Domain, Hostliste und CSRF-Origin müssen zusammenpassen.
-Ohne diesen Wert verwendet die Webregistrierung die Adresse der aktuellen Anfrage
-für ihre Bestätigungslinks. Ein fest gesetzter Wert gibt eine eindeutige Vereinsadresse vor.
+`PUBLIC_SITE_URL`, Hostliste und CSRF-Origin müssen zusammenpassen. Das Skript
+prüft das vor dem Stoppen der bisherigen Anwendung. Fehlt die öffentliche URL,
+bricht es ab. So entsteht keine Erfolgsmeldung mit ungeprüfter Domain.
+
+**Cloudflare Access** ist eine zusätzliche Anmeldung vor der Vereinswebsite.
+Falls Access eingesetzt wird, die URL trotzdem eintragen und die ausdrückliche
+Ausnahme in Abschnitt 5 verwenden; der öffentliche Test erfolgt dann im
+angemeldeten Browser. Auch E-Mail-Links verwenden die eingetragene Vereinsadresse.
 
 ### Vor dem ersten Update auf den geprüften Code-Stand
 
@@ -111,21 +161,60 @@ Die Ausgabe enthält personenbezogene Daten und gehört nicht in öffentliche Lo
 
 ## 4. Cloudflare Tunnel auf Nginx einstellen
 
-Im Cloudflare-Dashboard den Tunnel und den öffentlichen Hostnamen für die
-Vereinsdomain konfigurieren:
+1. Im Cloudflare-Dashboard **Networking → Tunnels** öffnen. Je nach Dashboard
+   findet sich die Liste unter **Networks → Connectors → Cloudflare Tunnels**.
+2. Einen Tunnel für diese Installation erstellen oder den vorhandenen auswählen.
+   Den Token dieses Tunnels in `.env` unter `CLOUDFLARE_TUNNEL_TOKEN` eintragen.
+3. Die veröffentlichte Anwendung / den öffentlichen Hostnamen bearbeiten
+   (oft „Published application routes“ oder „Public Hostnames“).
+4. Die eigene Vereinsdomain und das folgende Ziel eintragen, speichern.
 
-- Service-Typ: **HTTP**.
-- Service-URL: **`nginx:80`**, vollständig **`http://nginx:80`**.
-- Das frühere Ziel `http://web:8000` ersetzen.
-- Eine HTTP-Host-Header-Überschreibung entfernen oder auf eine erlaubte
-  öffentliche Vereinsdomain setzen.
+| Dashboard-Feld | Wert für dieses Projekt |
+| --- | --- |
+| Öffentlicher Hostname | `tennis.example` bzw. eigene Vereinsdomain |
+| Pfad / Path | Leer lassen, damit alle Seiten und Dateien erreichbar sind |
+| Service-Typ / Type | **HTTP** |
+| URL, wenn Type separat auswählbar ist | **`nginx:80`** |
+| Vollständige Service-URL | **`http://nginx:80`** |
+| HTTP Host Header unter zusätzlichen Einstellungen | Leer lassen; so bleibt die Vereinsdomain erhalten |
+
 - HTTPS für Besucher aktivieren und HTTP am Cloudflare-Rand auf HTTPS umleiten.
 - Keine „Cache Everything“-Regel für dynamische Seiten oder `/media/` anwenden.
   Medien müssen `private, no-store` respektieren.
 - HSTS erst für eine vollständig über HTTPS erreichbare Domain aktivieren.
 
-Der tokenbasierte Tunnel erhält seinen öffentlichen Hostnamen aus dem Dashboard.
-Die Compose-Datei kann diese Dashboard-Einstellung nicht automatisch ändern.
+**Warum HTTP, obwohl die Website HTTPS verwendet?** Besucher verbinden sich
+verschlüsselt mit Cloudflare. Auch die Tunnelverbindung ist verschlüsselt.
+Nginx nimmt innerhalb dieses Docker-Projekts HTTP auf Port 80 entgegen und hat
+hier keinen HTTPS-Port. `https://nginx:80` ist deshalb das falsche Ziel.
+
+**Warum nicht localhost?** Im Tunnel-Container bedeutet `localhost` bzw.
+`127.0.0.1` „dieser Tunnel-Container“. Nginx läuft in einem anderen Container.
+Docker findet ihn im gemeinsamen Projektnetzwerk über den Namen `nginx`.
+Ebenso gehören hier keine Server-IP, öffentliche Vereinsdomain oder
+`host.docker.internal` als Ziel hinein. `web:8000` würde Nginx und damit die
+Auslieferung von CSS und Dateien umgehen.
+
+Der Tunnel wird **durch dieses Compose-Projekt** gestartet. Die vom Dashboard
+vorgeschlagenen Installationsbefehle (`cloudflared service install` oder ein
+separates `docker run`) sind deshalb für diese Anleitung nicht zusätzlich
+auszuführen. Ein außerhalb des Projekts gestarteter Connector kann den
+Docker-Namen `nginx` normalerweise nicht erreichen.
+
+Bei bestehenden Installationen in der Tunnelübersicht alle **Connectors / Replicas**
+prüfen: Gibt es noch einen alten Windows-Dienst, ein NAS oder einen Testserver mit
+demselben Tunnel-Token? Auch diese Instanzen können Anfragen erhalten. Jeder
+beabsichtigte Connector muss sein Ziel erreichen; versehentliche alte Instanzen
+nach Klärung ihrer Nutzung gezielt stoppen. Die vier Verbindungen einer einzelnen
+Instanz sind normal und nicht vier separat installierte Connector-Prozesse.
+Siehe [Cloudflare-Replikate](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-availability/deploy-replicas/).
+
+Beim Anlegen des öffentlichen Hostnamens erstellt Cloudflare normalerweise den
+zugehörigen DNS-Eintrag. In der DNS-Übersicht prüfen, dass die Domain auf den
+vorgesehenen Tunnel zeigt; bestehende widersprüchliche Einträge zuerst zuordnen.
+Token, Tunnel und öffentliche Domain müssen zur selben Installation gehören.
+Die Compose-Datei verändert die Dashboard-Route und DNS-Einträge nicht.
+Grundlage: [Cloudflare-Tunneleinrichtung](https://developers.cloudflare.com/tunnel/get-started/).
 Eine bestehende Installation ist während der Umstellung kurzzeitig unterbrochen.
 
 ## 5. Deployment ausführen
@@ -138,7 +227,8 @@ bash scripts/deploy.sh
 Der Ablauf ist bei Erstinstallation und Updates derselbe:
 
 1. Ein Deployment-Lock verhindert gleichzeitige Skriptläufe.
-2. Konfiguration prüfen, Anwendung bauen, Nginx-/Tunnel-Images herunterladen.
+2. Konfiguration prüfen, Anwendung bauen, öffentliche Domain/Hosts/CSRF prüfen,
+   Nginx-/Tunnel-Images herunterladen.
    Fehler in dieser Phase stoppen die bisher laufende Anwendung nicht.
 3. PostgreSQL und Redis starten und auf Bereitschaft warten.
 4. Tunnel, Nginx, Web und Celery für das Wartungsfenster stoppen.
@@ -150,13 +240,32 @@ Der Ablauf ist bei Erstinstallation und Updates derselbe:
 8. Nginx-Konfiguration sowie echte HTTP-Auslieferung von Vereins-/Admin-CSS,
    Startseite und vorhandenen öffentlichen Bildern prüfen.
 9. Celery Worker und Beat starten und ihre Healthchecks abwarten.
-10. Tunnel starten und seine Verbindung über den internen `/ready`-Endpunkt prüfen.
-11. Wenn `PUBLIC_SITE_URL` gesetzt ist, die HTTPS-Auslieferung durch Cloudflare prüfen.
+10. Tunnel starten und auf die Cloudflare-Verbindung warten (`/ready`).
+11. Mit dem kurzlebigen Hilfsdienst `tunnel_probe` aus dem Netzwerk des
+    Tunnel-Containers Nginx, Anwendung und CSS prüfen.
+12. Über `PUBLIC_SITE_URL` bis zu 60 Sekunden auf drei aufeinanderfolgende
+    erfolgreiche Bereitschaftsantworten warten; anschließend die Startseite,
+    aktuellen CSS-Dateien und Medienzugriffe über HTTPS prüfen. Die Anfragen
+    besitzen jeweils eine neue Prüfkennung und Cache-Control-Header.
 
 Bei einem Fehler nach Beginn des Wartungsfensters wird der Tunnel gestoppt.
 Das Skript meldet Erfolg erst nach den vorgesehenen Prüfungen.
+Bei einem öffentlichen Fehler auch das Dashboard-Ziel prüfen; der
+interne Test allein kann dessen korrekten Eintrag nicht nachweisen.
 Backups werden nicht automatisch gelöscht; Speicherplatz und Aufbewahrung
 müssen im Betrieb verwaltet werden.
+
+Bei einer absichtlich durch **Cloudflare Access** geschützten Website:
+
+```bash
+bash scripts/deploy.sh --skip-public-check
+```
+
+Dann steht ausdrücklich **„öffentliche Website NICHT geprüft“** in der Ausgabe.
+Die lokale Prüfung, Tunnelverbindung und der Test im Tunnel-Netzwerk laufen
+weiterhin. Anschließend im angemeldeten Browser Startseite, `/healthz/`, Design
+und Anmeldung prüfen. Diese Ausnahme behebt keinen 502; sie ist kein Ersatz für
+die Prüfung der öffentlichen Website. `PUBLIC_SITE_URL` bleibt erforderlich.
 
 Ein direktes `docker compose up -d --build` besitzt zwar Startabhängigkeiten,
 ersetzt aber weder die Backup-Schritte noch den vollständigen Prüfablauf des Skripts.
@@ -183,7 +292,8 @@ docker compose -f docker-compose.prod.yml ps -a
 docker compose -f docker-compose.prod.yml exec -T nginx nginx -t
 docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py
 docker compose -f docker-compose.prod.yml exec -T web python scripts/check_tunnel.py
-docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py --base-url https://DEINE-DOMAIN
+docker compose -f docker-compose.prod.yml run --rm --no-deps -T tunnel_probe
+docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py --public
 docker compose -f docker-compose.prod.yml exec -T web python manage.py check --deploy
 ```
 
@@ -221,6 +331,8 @@ bash update.sh
 
 Das Skript verweigert lokale Änderungen, holt Code mit `git pull --ff-only`
 und verwendet anschließend denselben Deployment-Ablauf mit Backup und Tests.
+Bei Cloudflare Access entsprechend `bash update.sh --skip-public-check` verwenden
+und anschließend die öffentliche Website im angemeldeten Browser prüfen.
 Ein Wartungsfenster ist einzuplanen. Vor einem eigenen manuellen Checkout die
 Änderungen prüfen; für bereits ausgecheckten Code `bash scripts/deploy.sh` verwenden.
 
@@ -334,14 +446,73 @@ muss vor dem Neustart behoben werden.
 
 ## 11. Fehler diagnostizieren
 
+### „Healthy“, aber die Website zeigt 502: in dieser Reihenfolge prüfen
+
+**1. Das Ziel im Dashboard kontrollieren.** Für diese Anleitung muss der
+öffentliche Hostname auf **HTTP → `nginx:80`** zeigen. Ein Token richtet
+diese Weiterleitung nicht automatisch ein. Keine zusätzlichen Connector-Prozesse
+außerhalb des Compose-Projekts starten; vorhandene alte Instanzen ebenfalls prüfen.
+
+**2. Die Dienste auf dem Server ansehen.**
+
 ```bash
 docker compose -f docker-compose.prod.yml ps -a
-docker compose -f docker-compose.prod.yml logs --tail=100 prepare web nginx celery_worker celery_beat cloudflared
-docker compose -f docker-compose.prod.yml exec -T web python manage.py findstatic css/styles.css --verbosity 2
 ```
 
-| Beobachtung | Nächster Prüfschritt |
+Web, Nginx, DB und Redis müssen laufen und `healthy` anzeigen. `prepare`
+mit `Exited (0)` ist richtig: Dieser Dienst beendet sich nach seiner Arbeit.
+`cloudflared` mit `Up` bestätigt nur einen laufenden Prozess.
+
+**3. Anwendung und tatsächlichen Netzwerkweg getrennt testen.**
+
+```bash
+# Anwendung über Nginx, aus dem Webcontainer:
+docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py
+
+# Verbindung zu Cloudflare:
+docker compose -f docker-compose.prod.yml exec -T web python scripts/check_tunnel.py
+
+# Nginx und Anwendung, aus demselben Netzwerk wie der Tunnel:
+docker compose -f docker-compose.prod.yml run --rm --no-deps -T tunnel_probe
+
+# Vollständiger Weg über die Vereinsdomain:
+docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py --public
+```
+
+Der dritte Befehl benötigt einen laufenden Compose-Tunnel und das neue gebaute
+Anwendungsimage. Der Hilfscontainer wird danach automatisch entfernt. Er verwendet
+das [Netzwerk des Tunnel-Containers](https://docs.docker.com/reference/compose-file/services/#network_mode);
+ein zusätzlicher Port am Server ist dafür nicht nötig. Das minimale
+Cloudflare-Image besitzt keine Shell und kein `curl`, daher sind entsprechende
+`docker exec cloudflared curl ...`-Anleitungen für dieses Projekt ungeeignet.
+
+- Erster Test fehlgeschlagen: Problem bei Anwendung, Nginx, Datenbank oder Dateien.
+- Erster Test erfolgreich, dritter fehlgeschlagen: Netzwerkweg zwischen Tunnel und Nginx prüfen.
+- Erste drei Tests erfolgreich, öffentlicher Test fehlgeschlagen: Dashboard-Route,
+  Domain/DNS, andere Connector-Instanzen und Access-/WAF-/Cache-Regeln prüfen.
+- Öffentlicher Test zeigt eine Umleitung zur Access-Anmeldung: Im angemeldeten
+  Browser prüfen; die ausdrückliche Access-Ausnahme ist in Abschnitt 5 beschrieben.
+
+**4. Die Fehlermeldung in den Logs lesen.** Nach einem fehlgeschlagenen Deployment
+stoppt das Skript den lokalen Tunnel. Die bisherigen Fehlermeldungen bleiben
+über diesen Befehl lesbar:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail=100 cloudflared nginx web db
+```
+
+| Beobachtung / Meldung | Bedeutung und nächster Prüfschritt |
 | --- | --- |
+| Cloudflare 502, `Unable to reach the origin service` | Tunnel verbunden, internes Ziel nicht erreichbar; Service-URL und Tunnel-Logs prüfen |
+| `dial tcp ... connection refused` | Am Zielport antwortet kein Dienst; `nginx:80`, Containerstatus und unerwartetes `localhost` prüfen |
+| `lookup nginx ... no such host` | Connector kennt das Docker-Netzwerk nicht; außerhalb des Projekts laufende oder alte Connector-Instanz prüfen |
+| TLS-/Handshake-Fehler beim Origin | Wahrscheinlich HTTPS für den internen HTTP-Port gewählt; Type **HTTP**, URL `nginx:80` verwenden |
+| `i/o timeout` / `context deadline exceeded` | Ziel antwortet nicht rechtzeitig; Netzwerk, Ressourcen und Web-/DB-Logs prüfen |
+| Interner Test liefert 502, Nginx-Log nennt `upstream` | Nginx erreicht Gunicorn nicht; Webstatus und Weblogs prüfen |
+| `/healthz/` liefert 503 | Anwendung erreicht PostgreSQL nicht; DB-Status und Zugangsdaten prüfen |
+| HTTP 400 / `DisallowedHost` | Angefragte Domain fehlt in `DJANGO_ALLOWED_HOSTS` oder Hostheader wurde im Dashboard überschrieben |
+| HTTP 403 oder Access-Anmeldung | Access/WAF blockiert die Anfrage; Zugangsregeln bzw. angemeldeten Browser prüfen |
+| Cloudflare 1033 | Keine nutzbare Tunnelverbindung; nach einem Skriptabbruch bis zur Fehlerkorrektur möglich |
 | CSS antwortet mit `text/html` | Tunnelziel, `prepare`-Exit-Code und Static-Volume prüfen |
 | Nur öffentliche URL fehlerhaft | Cloudflare-Hostheader, Cache/Access und `PUBLIC_SITE_URL` prüfen |
 | Migration oder Backup fehlgeschlagen | Dienste gestoppt lassen, Logs und freien Speicher prüfen |
@@ -350,6 +521,29 @@ docker compose -f docker-compose.prod.yml exec -T web python manage.py findstati
 | Celery startet nicht | Redis, Worker-Healthcheck und Celery-Logs prüfen |
 | Tunnel verbindet nicht | Token, ausgehende Verbindung und Tunnel-Logs prüfen |
 | Deployment-Lock vorhanden | Zuerst sicherstellen, dass kein Deployment läuft; nur einen verwaisten Lock entfernen |
+
+Wenn weiterhin Fehler auftreten, zusätzlich Vorbereitung und Hintergrunddienste ansehen:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail=100 prepare celery_worker celery_beat
+```
+
+Bei **sporadischen** 502 alle Connector-Instanzen prüfen. Ein lokaler Test
+untersucht nur den Connector dieses Docker-Projekts. Auch mehrere erfolgreiche
+öffentliche Anfragen beweisen nicht, dass jede andere Instanz funktioniert.
+Ein gestoppter lokaler Tunnel stoppt keine auf anderen Rechnern laufenden Instanzen.
+
+Wenn `web` außerhalb des Deployment-Skripts neu erstellt wurde, kann Nginx noch
+die frühere Container-IP verwenden. Das reguläre Deployment erstellt beide
+Dienste neu. Nur Nginx oder nur den Webcontainer neu zu erstellen ersetzt diesen
+Abgleich nicht.
+
+Ein erfolgreicher Lauf prüft den Zustand **zu diesem Zeitpunkt**.
+Compose-Startabhängigkeiten steuern die Startreihenfolge; sie überwachen den
+laufenden Dienst nicht dauerhaft. `restart: always` startet einen beendeten
+Prozess neu, einen lediglich `unhealthy` gewordenen Container nicht automatisch.
+Siehe [Compose-Startabhängigkeiten](https://docs.docker.com/compose/how-tos/startup-order/).
+Bei späteren Ausfällen daher erneut Status und Logs prüfen.
 
 Nach der Fehlerkorrektur `bash scripts/deploy.sh` erneut ausführen.
 Bei einem Prozessabbruch mit SIGKILL kann ein leerer Lock-Ordner verbleiben.
@@ -380,12 +574,12 @@ Nach Prüfung, dass kein Deployment mehr läuft, im Projektverzeichnis
 ```bash
 python -m pip install -e '.[dev]'
 python -m pytest
-NGINX_BINARY=/usr/sbin/nginx pytest tests/test_deployment.py tests/test_deployment_operations.py
+NGINX_BINARY=/usr/sbin/nginx pytest tests/test_deployment.py tests/test_deployment_operations.py tests/test_tunnel_deployment.py
 ```
 
 Unter PowerShell zuerst `$env:NGINX_BINARY = 'C:/Pfad/nginx.exe'` setzen.
-Die beiden echten HTTP-Tests benötigen Nginx; alle Dateien und Ports sind temporär.
-Ohne Nginx werden diese beiden Tests übersprungen. Die Skripttests verwenden
+Die echten Nginx-HTTP-Tests benötigen Nginx; alle Dateien und Ports sind temporär.
+Ohne Nginx werden diese Tests übersprungen. Die Skripttests verwenden
 simulierte Docker-Aufrufe und berühren keine Produktionsdaten.
 Ein echter PostgreSQL-Restore und ein vollständiger Compose-Start müssen
 zusätzlich auf einem Docker-System geprüft werden.
