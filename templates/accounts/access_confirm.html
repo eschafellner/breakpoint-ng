@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section"><div class="wrap" style="max-width:480px;"><div class="card" style="padding:28px;">
+  {% if validlink %}
+    <h1>Passwort festlegen</h1><p>Wähle ein sicheres Passwort für deinen Zugang.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn court" type="submit">Passwort speichern</button></form>
+  {% else %}
+    <h1>Link ungültig oder abgelaufen</h1><p>Fordere einen neuen Link an, um dein Passwort festzulegen.</p>
+    <a href="{% url 'accounts:account_recovery' %}" class="btn court">Neuen Link anfordern</a>
+  {% endif %}
+</div></div></section>
+{% endblock %}

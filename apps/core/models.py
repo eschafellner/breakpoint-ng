@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+import nh3
 
 
 class TimeStampedModel(models.Model):
@@ -48,6 +50,20 @@ class ClubSettings(models.Model):
         default="<h2>Datenschutzerklärung</h2><p>Wir verarbeiten personenbezogene Daten nach DSGVO Art. 6.</p>",
     )
 
+    # PWA & Offline Emergency Info
+    offline_emergency_info = models.TextField(
+        _("Notfall- & Offline-Hinweise"),
+        blank=True,
+        default=(
+            "Die Tennisanlage ist für Mitglieder regulär zugänglich. "
+            "Bei unklarer Witterung, Platzsperren oder Notfällen wende dich bitte "
+            "direkt an die Platzverwaltung oder den Vorstand."
+        ),
+        help_text=_(
+            "Wird auf der Offline-Notfallseite der PWA angezeigt, wenn keine Internetverbindung besteht."
+        ),
+    )
+
     # Booking Rules (P-6)
     advance_days_member = models.PositiveIntegerField(
         _("Max. Vorlauf Mitglieder (Tage)"), default=7
@@ -85,10 +101,20 @@ class ClubSettings(models.Model):
 
     def save(self, *args, **kwargs):
         """Ensure singleton in DB: only one row exists."""
+        self.imprint_text = nh3.clean(self.imprint_text or "")
+        self.privacy_text = nh3.clean(self.privacy_text or "")
         if not self.pk:
             existing = ClubSettings.objects.first()
             self.pk = existing.pk if existing else 1
         super().save(*args, **kwargs)
+
+    @property
+    def safe_imprint_text(self):
+        return nh3.clean(self.imprint_text or "")
+
+    @property
+    def safe_privacy_text(self):
+        return nh3.clean(self.privacy_text or "")
 
 
 class AuditLog(models.Model):
@@ -117,3 +143,27 @@ class AuditLog(models.Model):
     def __str__(self):
         user_display = self.user.email if self.user else "System"
         return f"[{self.created_at:%Y-%m-%d %H:%M}] {user_display}: {self.action} on {self.entity_type}#{self.entity_id}"
+
+
+class OutgoingEmail(TimeStampedModel):
+    """A durable delivery request, committed with the business operation."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Ausstehend")
+        SENT = "SENT", _("Versendet")
+        FAILED = "FAILED", _("Versand fehlgeschlagen")
+
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    from_email = models.EmailField()
+    recipients = models.JSONField(default=list)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "next_attempt_at"], name="outgoing_email_due_idx")]
+        verbose_name = _("E-Mail-Versandauftrag")
+        verbose_name_plural = _("E-Mail-Versandaufträge")

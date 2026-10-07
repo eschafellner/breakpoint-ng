@@ -17,7 +17,7 @@ class ServiceManagedAdminMixin:
         return tuple(field.name for field in self.model._meta.fields)
 
 
-from .models import ClubSettings, AuditLog
+from .models import ClubSettings, AuditLog, OutgoingEmail
 
 
 @admin.register(ClubSettings)
@@ -43,6 +43,7 @@ class ClubSettingsAdmin(admin.ModelAdmin):
         ),
         ("Beitragsregeln", {"fields": ("prorated_membership_fees",)}),
         ("Rechtliches", {"fields": ("imprint_text", "privacy_text")}),
+        ("PWA & Offline-Modus", {"fields": ("offline_emergency_info",)}),
     )
 
     def has_add_permission(self, request):
@@ -82,3 +83,26 @@ class AuditLogAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OutgoingEmail)
+class OutgoingEmailAdmin(ServiceManagedAdminMixin, admin.ModelAdmin):
+    list_display = ("subject", "status", "attempts", "next_attempt_at", "sent_at")
+    list_filter = ("status",)
+    actions = ["retry_delivery"]
+
+    @admin.action(permissions=["view"], description="Fehlgeschlagene E-Mails erneut zum Versand vormerken")
+    def retry_delivery(self, request, queryset):
+        from django.utils import timezone
+        from .services import log_audit
+
+        count = queryset.filter(status=OutgoingEmail.Status.FAILED).update(
+            status=OutgoingEmail.Status.PENDING, attempts=0,
+            next_attempt_at=timezone.now(), last_error="",
+        )
+        log_audit(user=request.user, action="RETRY_EMAIL_DELIVERY", entity_type="OutgoingEmail",
+                  entity_id="bulk", changes={"count": count})
+        self.message_user(request, f"{count} E-Mails erneut vorgemerkt.")

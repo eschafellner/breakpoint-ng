@@ -12,30 +12,31 @@ from .models import Booking
 def send_booking_reminders():
     """Send reminder emails to players 24 hours prior to booking start."""
     now = timezone.now()
-    target_start = now + timedelta(hours=24)
-    window_end = target_start + timedelta(minutes=60)
+    # Catch up unsent reminders after SMTP/worker outages until play starts.
+    window_end = now + timedelta(hours=25)
 
     upcoming_bookings = Booking.objects.filter(
         status=Booking.Status.CONFIRMED,
-        start__gte=target_start,
+        start__gt=now,
         start__lt=window_end,
         reminder_sent_at__isnull=True,
     ).select_related("booked_by", "court")
 
     count = 0
     for b in upcoming_bookings:
-        subject = f"Erinnerung: Deine Tennis-Buchung morgen um {b.start:%H:%M} Uhr"
+        local_start, local_end = timezone.localtime(b.start), timezone.localtime(b.end)
+        subject = f"Erinnerung: Deine Tennis-Buchung am {local_start:%d.%m.} um {local_start:%H:%M} Uhr"
         msg = (
             f"Hallo {b.booked_by.first_name},\n\n"
-            f"wir erinnern dich an deine Platzbuchung morgen:\n"
+            f"wir erinnern dich an deine Platzbuchung:\n"
             f"Platz: {b.court.name}\n"
-            f"Zeit: {b.start:%d.%m.%Y} von {b.start:%H:%M} bis {b.end:%H:%M} Uhr\n\n"
+            f"Zeit: {local_start:%d.%m.%Y} von {local_start:%H:%M} bis {local_end:%H:%M} Uhr\n\n"
             f"Wir wünschen dir ein tolles Match!\n\n"
             f"TC Musterdorf"
         )
         with transaction.atomic():
             current = Booking.objects.select_for_update().get(pk=b.pk)
-            if current.status != Booking.Status.CONFIRMED or current.reminder_sent_at:
+            if current.status != Booking.Status.CONFIRMED or current.reminder_sent_at or current.start <= timezone.now():
                 continue
             try:
                 delivered = send_mail(

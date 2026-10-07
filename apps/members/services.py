@@ -274,6 +274,11 @@ def import_members_from_csv(
                     user.email_verified = True
                     user.save()
 
+                if not user.has_usable_password():
+                    from apps.accounts.services import send_account_access_email
+
+                    send_account_access_email(user)
+
                 # If no active membership exists, create one
                 if not Membership.objects.filter(
                     user=user, status=Membership.Status.ACTIVE

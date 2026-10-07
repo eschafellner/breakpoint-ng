@@ -8,6 +8,7 @@ urlpatterns = [
     path("ehrentafel/", views.honor_roll_view, name="honor_roll"),
     path("<slug:slug>/", views.tournament_detail_view, name="detail"),
     path("competition/<int:comp_id>/register/", views.register_view, name="register"),
+    path("competition/<int:comp_id>/draw/", views.draw_competition_view, name="draw"),
     path(
         "match/<int:match_id>/result/",
         views.manage_match_result_view,

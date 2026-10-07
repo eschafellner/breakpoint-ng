@@ -70,6 +70,12 @@ class User(AbstractUser):
         max_length=64,
         blank=True,
     )
+    email_verification_sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+    account_access_sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+    allow_partner_search = models.BooleanField(
+        _("In der Doppelpartnersuche sichtbar sein"), default=False,
+        help_text=_("Dein Name wird anderen teilnahmeberechtigten Personen zur Partnerwahl angezeigt, bei offenen Turnieren auch Gästen."),
+    )
 
     consent_privacy_at = models.DateTimeField(
         _("Datenschutzeinwilligung erteilt am"),
@@ -134,7 +140,8 @@ class User(AbstractUser):
         """Create a secure hex token for email verification."""
         token = secrets.token_urlsafe(32)
         self.email_verification_token = token
-        self.save(update_fields=["email_verification_token"])
+        self.email_verification_sent_at = timezone.now()
+        self.save(update_fields=["email_verification_token", "email_verification_sent_at"])
         return token
 
     def get_initials(self) -> str:

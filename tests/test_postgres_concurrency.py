@@ -220,3 +220,48 @@ def test_concurrent_tournament_registrations_respect_capacity(
         [Entry.Status.CONFIRMED, Entry.Status.WAITLIST]
     )
     assert Entry.objects.filter(status=Entry.Status.CONFIRMED).count() == 1
+
+
+def test_concurrent_outbox_delivery_sends_once():
+    from unittest.mock import patch
+    from apps.core.models import OutgoingEmail
+    from apps.core.services import deliver_outgoing_email
+
+    email = OutgoingEmail.objects.create(
+        subject="Concurrency",
+        message="Body",
+        from_email="club@example.at",
+        recipients=["player@example.at"],
+    )
+    with patch("apps.core.services.send_mail", return_value=1) as sender:
+        assert sorted(concurrent_calls(lambda: deliver_outgoing_email(email.pk))) == [
+            False,
+            True,
+        ]
+        assert sender.call_count == 1
+    email.refresh_from_db()
+    assert email.status == OutgoingEmail.Status.SENT and email.attempts == 1
+
+
+def test_concurrent_password_failures_are_counted(member_user):
+    from django.contrib.auth import authenticate
+
+    def fail_login():
+        assert authenticate(username=member_user.email, password="incorrect") is None
+        return "rejected"
+
+    assert concurrent_calls(fail_login) == ["rejected", "rejected"]
+    member_user.refresh_from_db()
+    assert member_user.failed_login_attempts == 2
+
+
+def test_concurrent_invitation_requests_send_one_link(guest_user):
+    from apps.accounts.services import send_account_access_email
+    from apps.core.models import ClubSettings, OutgoingEmail
+
+    ClubSettings.get_settings()
+    assert sorted(concurrent_calls(lambda: send_account_access_email(guest_user))) == [
+        False,
+        True,
+    ]
+    assert OutgoingEmail.objects.filter(recipients=[guest_user.email]).count() == 1

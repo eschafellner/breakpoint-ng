@@ -1,9 +1,11 @@
+import logging
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import is_tournament_director
 from apps.accounts.models import User
 from apps.core.view_utils import positive_pk
@@ -17,13 +19,18 @@ from .services import (
     confirm_partner_entry,
     withdraw_entry,
     schedule_tournament_match,
+    draw_competition,
+    draw_review_token,
 )
 from .selectors import (
     get_tournaments,
     get_tournament_by_slug,
     get_competition_bracket_view,
     get_honor_roll_entries,
+    get_potential_partners,
+    can_register_for_tournament,
 )
+from .forms import DrawCompetitionForm
 
 
 def tournament_list_view(request):
@@ -73,9 +80,7 @@ def tournament_detail_view(request, slug):
             .first()
         )
 
-    potential_partners = User.objects.filter(is_active=True).exclude(
-        pk=getattr(request.user, "pk", None)
-    )
+    potential_partners = get_potential_partners(tournament, request.user)
 
     return render(
         request,
@@ -88,6 +93,7 @@ def tournament_detail_view(request, slug):
             "bracket_data": bracket_data,
             "user_entry": user_entry,
             "potential_partners": potential_partners,
+            "can_register": can_register_for_tournament(tournament, request.user),
             "available_courts": Court.objects.filter(is_active=True),
         },
     )
@@ -102,7 +108,7 @@ def register_view(request, comp_id):
         partner_id = request.POST.get("partner_id")
         partner = None
         if partner_id:
-            partner = get_object_or_404(User, pk=positive_pk(partner_id))
+            partner = get_object_or_404(get_potential_partners(competition.tournament, request.user), pk=positive_pk(partner_id))
 
         try:
             entry = register_for_competition(
@@ -126,8 +132,9 @@ def register_view(request, comp_id):
                 )
         except ValidationError as e:
             messages.error(request, e.message if hasattr(e, "message") else str(e))
-        except Exception as e:
-            messages.error(request, str(e))
+        except Exception:
+            logging.getLogger(__name__).exception("Turnieranmeldung für Konkurrenz #%s fehlgeschlagen", competition.pk)
+            messages.error(request, _("Die Anmeldung konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     return redirect(
         f"/tournaments/{competition.tournament.slug}/?comp={competition.id}"
@@ -160,7 +167,7 @@ def withdraw_entry_view(request, entry_id):
     ) and not is_tournament_director(request.user):
         raise PermissionDenied(_("Keine Berechtigung für diese Abmeldung."))
     try:
-        withdraw_entry(entry)
+        withdraw_entry(entry, actor=request.user)
         messages.success(request, _("Turnieranmeldung zurückgezogen."))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
@@ -222,6 +229,7 @@ def manage_match_result_view(request, match_id):
                 score=parsed_score,
                 winner=winner,
                 result_type=result_type,
+                actor=request.user,
             )
             messages.success(
                 request,
@@ -229,8 +237,9 @@ def manage_match_result_view(request, match_id):
             )
         except ValidationError as e:
             messages.error(request, e.message if hasattr(e, "message") else str(e))
-        except Exception as e:
-            messages.error(request, str(e))
+        except Exception:
+            logging.getLogger(__name__).exception("Ergebnis für Spiel #%s fehlgeschlagen", match.pk)
+            messages.error(request, _("Das Ergebnis konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     return redirect(
         f"/tournaments/{match.competition.tournament.slug}/?comp={match.competition.id}"
@@ -253,6 +262,7 @@ def schedule_match_view(request, match_id):
             court=court,
             start_dt=start,
             duration_minutes=int(request.POST.get("duration", "90")),
+            actor=request.user,
         )
         messages.success(request, _("Spieltermin gespeichert."))
     except (ValueError, ValidationError):
@@ -265,3 +275,28 @@ def schedule_match_view(request, match_id):
     return redirect(
         f"/tournaments/{match.competition.tournament.slug}/?comp={match.competition_id}"
     )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def draw_competition_view(request, comp_id):
+    if not is_tournament_director(request.user):
+        raise PermissionDenied(_("Nur Turnierleiter können auslosen."))
+    competition = get_object_or_404(Competition.objects.select_related("tournament"), pk=comp_id)
+    form = DrawCompetitionForm(request.POST if request.method == "POST" else None,
+                               initial={"snapshot": draw_review_token(competition)})
+    if request.method == "POST" and form.is_valid():
+        try:
+            matches = draw_competition(competition=competition, actor=request.user,
+                                       review_token=form.cleaned_data["snapshot"])
+        except ValidationError as exc:
+            form.add_error(None, " ".join(exc.messages))
+        else:
+            messages.success(request, f"Auslosung abgeschlossen: {len(matches)} Spiele erstellt.")
+            return redirect(f"/tournaments/{competition.tournament.slug}/?comp={competition.pk}")
+    return render(request, "tournaments/draw.html", {
+        "title": "Auslosung prüfen", "competition": competition, "form": form,
+        "entries": competition.entries.filter(status=Entry.Status.CONFIRMED).select_related("player1", "player2").order_by("seed", "pk"),
+        "pending_count": competition.entries.filter(status=Entry.Status.PENDING_PARTNER).count(),
+        "waitlist_count": competition.entries.filter(status=Entry.Status.WAITLIST).count(),
+    })

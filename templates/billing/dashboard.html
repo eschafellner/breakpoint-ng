@@ -62,7 +62,7 @@
     <!-- Charges Table -->
     <div class="card">
       <div class="panel-head">
-        <h3 style="margin:0;">Forderungen ({{ charges|length }})</h3>
+        <h3 style="margin:0;">Forderungen ({{ page_obj.paginator.count }})</h3>
       </div>
       {% if charges %}
         <table class="data">
@@ -126,6 +126,13 @@
         </div>
       {% endif %}
     </div>
+    {% if page_obj.has_other_pages %}
+      <nav aria-label="Forderungsseiten" style="display:flex;gap:16px;align-items:center;margin-top:20px;flex-wrap:wrap;">
+        {% if page_obj.has_previous %}<a class="btn sm court" href="?page={{ page_obj.previous_page_number }}&amp;status={{ status_filter|urlencode }}&amp;q={{ search_query|urlencode }}">Zurück</a>{% endif %}
+        <span>Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a class="btn sm court" href="?page={{ page_obj.next_page_number }}&amp;status={{ status_filter|urlencode }}&amp;q={{ search_query|urlencode }}">Weiter</a>{% endif %}
+      </nav>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

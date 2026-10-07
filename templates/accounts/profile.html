@@ -54,7 +54,7 @@
           <h3 style="margin-bottom:16px;">Kontaktdaten bearbeiten</h3>
           <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="grid-2">
               <div class="field">
                 <label for="id_first_name">Vorname</label>
                 <input type="text" name="first_name" id="id_first_name" value="{{ form.first_name.value|default:'' }}" class="input">
@@ -65,7 +65,7 @@
               </div>
             </div>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="grid-2">
               <div class="field">
                 <label for="id_phone">Telefon</label>
                 <input type="text" name="phone" id="id_phone" value="{{ form.phone.value|default:'' }}" class="input">
@@ -81,7 +81,7 @@
               <input type="text" name="address_street" id="id_address_street" value="{{ form.address_street.value|default:'' }}" class="input">
             </div>
 
-            <div style="display:grid;grid-template-columns:120px 1fr;gap:12px;">
+            <div class="grid-split">
               <div class="field">
                 <label for="id_address_zip">PLZ</label>
                 <input type="text" name="address_zip" id="id_address_zip" value="{{ form.address_zip.value|default:'' }}" class="input">
@@ -97,6 +97,10 @@
               <input type="file" name="avatar" id="id_avatar" class="input">
             </div>
 
+            <div class="field" style="margin-top:16px;">
+              <label for="id_allow_partner_search">{{ form.allow_partner_search }} {{ form.allow_partner_search.label }}</label>
+              <p style="color:var(--muted);font-size:.88rem;">{{ form.allow_partner_search.help_text }}</p>
+            </div>
             <button type="submit" class="btn court" style="margin-top:8px;">Änderungen speichern</button>
           </form>
         </div>

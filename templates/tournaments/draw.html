@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section"><div class="wrap" style="max-width:800px;">
+  <h1>Auslosung prüfen</h1>
+  <div class="card" style="padding:24px;">
+    <h2>{{ competition.tournament.name }} – {{ competition.name }}</h2>
+    <p>{{ competition.get_format_display }} · {{ entries|length }} bestätigte Anmeldungen</p>
+    <p>Warteliste: {{ waitlist_count }} · Offene Partnerbestätigungen: {{ pending_count }}</p>
+    <p>Die Warteliste wird nicht ausgelost. Offene Partnerbestätigungen müssen geklärt werden; nach Anmeldeschluss werden unbestätigte Paare entfernt.</p>
+    <table class="data"><thead><tr><th>Teilnehmer / Paar</th><th>Setzung</th></tr></thead><tbody>
+      {% for entry in entries %}<tr><td>{{ entry }}</td><td>{{ entry.seed|default:'–' }}</td></tr>{% empty %}<tr><td colspan="2">Keine bestätigten Teilnehmer.</td></tr>{% endfor %}
+    </tbody></table>
+    <p>Eine bestehende Auslosung kann nur ersetzt werden, solange keine regulären Ergebnisse oder Platzreservierungen vorhanden sind.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn court" type="submit">Auslosung durchführen</button></form>
+    <p><a href="{% url 'tournaments:detail' competition.tournament.slug %}?comp={{ competition.pk }}">Zurück zum Turnier</a></p>
+  </div>
+</div></section>
+{% endblock %}

@@ -3,8 +3,21 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1E3B2F">
+  <meta name="description" content="{{ club_settings.tagline }}">
   <title>{% block title %}{{ title|default:club_settings.name }}{% endblock %}</title>
+
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="{% url 'core:manifest' %}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ club_settings.short_name|default:club_settings.name }}">
+  <link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}">
+  <link rel="icon" type="image/svg+xml" href="{% static 'icons/icon.svg' %}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{% static 'icons/icon-192x192.png' %}">
+  <link rel="shortcut icon" href="{% static 'icons/favicon.ico' %}">
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,7 +37,7 @@
         <circle cx="17" cy="17" r="15" fill="#D7E64A" stroke="#fff" stroke-width="2"/>
         <path d="M4 11c7 3 7 9 0 12M30 11c-7 3-7 9 0 12" fill="none" stroke="#fff" stroke-width="2"/>
       </svg>
-      {{ club_settings.name }}
+      <span class="logo-text">{{ club_settings.name }}</span>
     </a>
 
     <button class="burger" id="burgerBtn" aria-expanded="false" aria-controls="menu" aria-label="Menü öffnen">☰</button>
@@ -48,18 +61,20 @@
       {% endif %}
       <a href="{% url 'core:styleguide' %}">Styleguide</a>
 
-      {% if user.is_authenticated %}
-        <a href="{% url 'accounts:profile' %}" class="user">
-          <span class="avatar" aria-hidden="true">{{ user.get_initials }}</span>
-          {{ user.first_name|default:user.email }}
-        </a>
-        <form method="post" action="{% url 'accounts:logout' %}" style="margin-left:8px;">
-          {% csrf_token %}<button type="submit" class="btn sm ghost">Abmelden</button>
-        </form>
-      {% else %}
-        <a href="{% url 'accounts:login' %}" class="btn sm ghost" style="margin-left:8px;">Anmelden</a>
-        <a href="{% url 'accounts:register' %}" class="btn sm" style="margin-left:4px;">Registrieren</a>
-      {% endif %}
+      <div class="menu-auth">
+        {% if user.is_authenticated %}
+          <a href="{% url 'accounts:profile' %}" class="user">
+            <span class="avatar" aria-hidden="true">{{ user.get_initials }}</span>
+            <span class="user-name">{{ user.first_name|default:user.email }}</span>
+          </a>
+          <form method="post" action="{% url 'accounts:logout' %}" class="logout-form">
+            {% csrf_token %}<button type="submit" class="btn sm ghost">Abmelden</button>
+          </form>
+        {% else %}
+          <a href="{% url 'accounts:login' %}" class="btn sm ghost">Anmelden</a>
+          <a href="{% url 'accounts:register' %}" class="btn sm">Registrieren</a>
+        {% endif %}
+      </div>
     </nav>
   </div>
 </header>
@@ -119,6 +134,7 @@
     this.setAttribute('aria-expanded', open);
   });
 </script>
+<script src="{% static 'js/pwa.js' %}"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

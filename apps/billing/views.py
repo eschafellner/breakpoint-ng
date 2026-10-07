@@ -1,7 +1,9 @@
-from decimal import Decimal
+import logging
+from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
@@ -22,18 +24,20 @@ def cashier_dashboard_view(request):
     search = request.GET.get("q", "")
     charges = get_cashier_charges(status=status, search=search)
     summary = get_billing_summary()
+    page = Paginator(charges, 50).get_page(request.GET.get("page"))
 
     return render(
         request,
         "billing/dashboard.html",
         {
             "title": "Kassier-Dashboard",
-            "charges": charges[:100],
+            "charges": page,
+            "page_obj": page,
             "summary": summary,
             "status_filter": status,
             "search_query": search,
             "statuses": Charge.Status.choices,
-            "current_year": timezone.now().year,
+            "current_year": timezone.localdate().year,
         },
     )
 
@@ -70,8 +74,13 @@ def record_payment_view(request, charge_id):
                     "status": charge.get_status_display(),
                 },
             )
-        except Exception as e:
+        except (ValidationError, ValueError) as e:
             messages.error(request, str(e))
+        except InvalidOperation:
+            messages.error(request, _("Bitte gib einen gültigen Zahlungsbetrag an."))
+        except Exception:
+            logging.getLogger(__name__).exception("Zahlung für Forderung #%s fehlgeschlagen", charge.pk)
+            messages.error(request, _("Die Zahlung konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     return redirect("billing:dashboard")
 

@@ -1,6 +1,8 @@
 from django.contrib import admin
 from .models import Tournament, Competition, Entry, Match, HonorRollEntry
 from apps.core.admin import ServiceManagedAdminMixin
+from django.urls import reverse
+from django.utils.html import format_html
 
 
 class CompetitionInline(admin.TabularInline):
@@ -41,9 +43,13 @@ class TournamentAdmin(admin.ModelAdmin):
 
 @admin.register(Competition)
 class CompetitionAdmin(admin.ModelAdmin):
-    list_display = ("name", "tournament", "discipline", "format", "max_entries")
+    list_display = ("name", "tournament", "discipline", "format", "max_entries", "draw_link")
     list_filter = ("discipline", "format", "tournament")
     inlines = [MatchInline]
+
+    @admin.display(description="Auslosung")
+    def draw_link(self, obj):
+        return format_html('<a href="{}">Teilnehmer prüfen und auslosen</a>', reverse("tournaments:draw", args=[obj.pk]))
 
 
 @admin.register(Entry)

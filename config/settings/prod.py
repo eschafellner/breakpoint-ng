@@ -21,6 +21,10 @@ NGINX_MEDIA_ACCEL = True
 
 # Persisted by Celery Beat's schedule file; exactly one Beat instance is used.
 CELERY_BEAT_SCHEDULE = {
+    "pending-emails": {
+        "task": "apps.core.tasks.deliver_pending_emails",
+        "schedule": crontab(minute="*"),
+    },
     "end-expired-memberships": {
         "task": "apps.members.tasks.task_end_expired_memberships",
         "schedule": crontab(hour=0, minute=5),
@@ -61,6 +65,7 @@ X_FRAME_OPTIONS = "DENY"
 
 # Email Configuration
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+MAIL_DELIVERY_ASYNC = True
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.example.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("true", "1")

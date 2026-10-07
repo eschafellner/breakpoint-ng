@@ -7,9 +7,13 @@ from django.core.validators import validate_email
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from apps.core.services import log_audit, send_mail_after_commit
 from .models import User
 from .permissions import ALL_ROLES
+from .tokens import account_access_token_generator
 
 MAX_FAILED_ATTEMPTS = 5
 LOCK_DURATION_MINUTES = 15
@@ -138,6 +142,10 @@ def verify_email(token: str) -> Optional[User]:
         return None
     try:
         user = User.objects.select_for_update().get(email_verification_token=token)
+        if not user.is_active or not user.email_verification_sent_at or (
+            timezone.now() - user.email_verification_sent_at
+        ).total_seconds() > settings.PASSWORD_RESET_TIMEOUT:
+            return None
         user.email_verified = True
         user.email_verification_token = ""
         user.save(update_fields=["email_verified", "email_verification_token"])
@@ -150,6 +158,55 @@ def verify_email(token: str) -> Optional[User]:
         return user
     except User.DoesNotExist:
         return None
+
+
+@transaction.atomic
+def send_account_access_email(user: User, site_url: Optional[str] = None):
+    """Invite an imported account or reset a password without a default password."""
+    user = User.objects.select_for_update().get(pk=user.pk)
+    now = timezone.now()
+    if not user.is_active or (
+        user.account_access_sent_at and
+        (now - user.account_access_sent_at).total_seconds() < settings.ACCOUNT_LINK_RESEND_SECONDS
+    ):
+        return False
+    user.account_access_sent_at = now
+    user.save(update_fields=["account_access_sent_at"])
+    token = account_access_token_generator.make_token(user)
+    path = reverse("accounts:account_access_confirm", kwargs={
+        "uidb64": urlsafe_base64_encode(force_bytes(user.pk)), "token": token,
+    })
+    base_url = (settings.PUBLIC_SITE_URL or site_url or "http://localhost:8000").rstrip("/")
+    from apps.core.models import ClubSettings
+
+    club_name = ClubSettings.get_settings().name
+    send_mail_after_commit(
+        subject=f"Dein Zugang zu {club_name}",
+        message=(f"Hallo {user.first_name},\n\n"
+                 f"hier kannst du ein Passwort für deinen Zugang zu {club_name} festlegen:\n\n"
+                 f"{base_url}{path}\n\nDer Link ist 24 Stunden gültig und kann einmal verwendet werden.\n"
+                 "Falls du keinen Zugang angefordert hast, kannst du diese E-Mail ignorieren."),
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tennisclub.local"),
+        recipient_list=[user.email],
+    )
+    return True
+
+
+@transaction.atomic
+def request_account_recovery(email: str, site_url: Optional[str] = None):
+    """Do not expose existence or status of an account to the requester."""
+    user = User.objects.select_for_update().filter(email__iexact=email.strip(), is_active=True).first()
+    if not user:
+        return
+    if not user.email_verified and user.has_usable_password():
+        if user.email_verification_sent_at and (
+            timezone.now() - user.email_verification_sent_at
+        ).total_seconds() < settings.ACCOUNT_LINK_RESEND_SECONDS:
+            return
+        token = user.generate_verification_token()
+        send_verification_email(user, token, site_url)
+    else:
+        send_account_access_email(user, site_url)
 
 
 @transaction.atomic
@@ -232,6 +289,7 @@ def export_user_data(user: User) -> Dict[str, Any]:
         },
         "account_type": user.account_type,
         "email_verified": user.email_verified,
+        "allow_partner_search": user.allow_partner_search,
         "consent_privacy_at": (
             str(user.consent_privacy_at) if user.consent_privacy_at else None
         ),

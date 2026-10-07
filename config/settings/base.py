@@ -73,6 +73,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Custom User Model
 AUTH_USER_MODEL = "accounts.User"
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.ClubAuthenticationBackend"]
+PASSWORD_RESET_TIMEOUT = 24 * 60 * 60
+ACCOUNT_LINK_RESEND_SECONDS = 60
+EMAIL_TIMEOUT = 10
+MAIL_DELIVERY_ASYNC = False
 
 AUTH_PASSWORD_VALIDATORS = [
     {

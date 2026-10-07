@@ -7,7 +7,7 @@
       <div style="font-size:3rem;margin-bottom:12px;">✉️</div>
       <h2>Registrierung fast abgeschlossen!</h2>
       <p style="color:var(--muted);font-size:1.05rem;line-height:1.6;margin:16px 0;">
-        Wir haben einen Bestätigungslink an <b>{{ user.email }}</b> gesendet.<br>
+        Dein Bestätigungslink wird an <b>{{ user.email }}</b> gesendet.<br>
         Bitte klicke auf den Link in der E-Mail, um dein Konto zu aktivieren.
       </p>
       {% if membership_requested %}
@@ -17,6 +17,7 @@
       {% endif %}
       <div style="margin-top:28px;">
         <a href="{% url 'accounts:login' %}" class="btn court">Zur Anmeldung</a>
+        <p><a href="{% url 'accounts:account_recovery' %}">Bestätigungslink erneut anfordern</a></p>
       </div>
     </div>
   </div>

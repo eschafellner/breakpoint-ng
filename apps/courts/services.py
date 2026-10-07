@@ -97,6 +97,7 @@ def create_blocking(
         ).select_related("booked_by")
 
         for b in overlapping:
+            local_start, local_end = timezone.localtime(b.start), timezone.localtime(b.end)
             b.status = Booking.Status.CANCELLED
             b.cancelled_at = timezone.now()
             b.save(update_fields=["status", "cancelled_at"])
@@ -116,7 +117,7 @@ def create_blocking(
             )
             msg = (
                 f"Hallo {b.booked_by.first_name},\n\n"
-                f"deine Buchung auf {court.name} am {b.start:%d.%m.%Y} von {b.start:%H:%M} bis {b.end:%H:%M} Uhr "
+                f"deine Buchung auf {court.name} am {local_start:%d.%m.%Y} von {local_start:%H:%M} bis {local_end:%H:%M} Uhr "
                 f"musste leider aufgrund einer Platzsperre ({blocking.get_reason_display()}) storniert werden.\n\n"
                 f"Grund / Bemerkung: {note or 'Keine Angabe'}\n\n"
                 f"Offene, unbezahlte Gebühren wurden storniert. Bereits verbuchte Zahlungen prüft der Kassier.\n"
@@ -466,7 +467,7 @@ def create_booking(
 
     # 11. Central Billing Charge Creation (if fee applicable)
     if total_price > Decimal("0.00"):
-        desc = f"Platzbuchung {locked_court.name} am {start:%d.%m.%Y} ({start:%H:%M}–{end:%H:%M})"
+        desc = f"Platzbuchung {locked_court.name} am {local_start:%d.%m.%Y} ({local_start:%H:%M}–{local_end:%H:%M})"
         create_charge(
             user=booked_by,
             kind=charge_kind,
@@ -482,12 +483,12 @@ def create_booking(
         if total_price > 0
         else ""
     )
-    subject = f"Buchungsbestätigung: {locked_court.name} am {start:%d.%m.%Y}"
+    subject = f"Buchungsbestätigung: {locked_court.name} am {local_start:%d.%m.%Y}"
     msg = (
         f"Hallo {booked_by.first_name},\n\n"
         f"deine Platzbuchung war erfolgreich!\n"
         f"Platz: {locked_court.name}\n"
-        f"Zeit: {start:%d.%m.%Y} von {start:%H:%M} bis {end:%H:%M} Uhr\n"
+        f"Zeit: {local_start:%d.%m.%Y} von {local_start:%H:%M} bis {local_end:%H:%M} Uhr\n"
         f"Gesamtbetrag: {total_price:.2f} €\n\n"
         f"{bank_info}\n"
         f"Stornierungen sind bis {club_settings.free_cancel_hours} Stunden vor Spielbeginn kostenlos möglich.\n\n"

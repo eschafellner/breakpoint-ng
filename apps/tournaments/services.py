@@ -3,11 +3,12 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any, Tuple
 from django.core.exceptions import ValidationError
+from django.core import signing
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from apps.accounts.models import User
-from apps.accounts.permissions import is_member
+from apps.accounts.permissions import is_member, is_tournament_director
 from apps.billing.models import Charge
 from apps.billing.services import create_charge, cancel_charge
 from apps.courts.models import Court, Booking, Blocking
@@ -222,11 +223,13 @@ def confirm_partner_entry(entry: Entry, partner: User) -> Entry:
     else:
         entry.status = Entry.Status.CONFIRMED
     entry.save(update_fields=["status"])
+    log_audit(user=partner, action="CONFIRM_TOURNAMENT_PARTNER", entity_type="Entry",
+              entity_id=entry.pk, changes={"status": entry.status})
     return entry
 
 
 @transaction.atomic
-def withdraw_entry(entry: Entry) -> None:
+def withdraw_entry(entry: Entry, actor: Optional[User] = None) -> None:
     """Withdraw from tournament; advances first waitlist entry if applicable."""
     Competition.objects.select_for_update().get(pk=entry.competition_id)
     current = Entry.objects.select_for_update().get(pk=entry.pk)
@@ -265,6 +268,50 @@ def withdraw_entry(entry: Entry) -> None:
         if next_waitlist:
             next_waitlist.status = Entry.Status.CONFIRMED
             next_waitlist.save(update_fields=["status"])
+    log_audit(user=actor, action="WITHDRAW_TOURNAMENT_ENTRY", entity_type="Entry",
+              entity_id=entry.pk, changes={"previous_status": prev_status})
+
+
+def draw_snapshot(competition):
+    return {
+        "competition": competition.pk, "format": competition.format,
+        "discipline": competition.discipline,
+        "entries": list(competition.entries.filter(status=Entry.Status.CONFIRMED).order_by("pk").values_list("pk", "seed")),
+    }
+
+
+def draw_review_token(competition):
+    return signing.dumps(draw_snapshot(competition), salt="tournament-draw-review")
+
+
+@transaction.atomic
+def draw_competition(*, competition, actor, review_token):
+    if not is_tournament_director(actor):
+        raise ValidationError(_("Nur Turnierleiter können auslosen."))
+    competition = Competition.objects.select_for_update().select_related("tournament").get(pk=competition.pk)
+    if competition.tournament.status not in (Tournament.Status.OPEN, Tournament.Status.DRAWN):
+        raise ValidationError(_("Dieses Turnier kann derzeit nicht ausgelost werden."))
+    try:
+        reviewed = signing.loads(review_token, salt="tournament-draw-review", max_age=900)
+    except signing.BadSignature as exc:
+        raise ValidationError(_("Die Teilnehmerübersicht ist abgelaufen. Bitte prüfe sie erneut.")) from exc
+    # JSON represents tuples as lists, so compare the normalized payload.
+    current = draw_snapshot(competition)
+    current["entries"] = [list(pair) for pair in current["entries"]]
+    if reviewed != current:
+        raise ValidationError(_("Die Teilnehmer oder Setzungen haben sich geändert. Bitte prüfe die Übersicht erneut."))
+    expire_unconfirmed_entries(competition_id=competition.pk)
+    if competition.entries.filter(status=Entry.Status.PENDING_PARTNER).exists():
+        raise ValidationError(_("Offene Partnerbestätigungen müssen vor der Auslosung geklärt werden."))
+    if competition.format == Competition.Format.KNOCKOUT:
+        matches = generate_knockout_draw(competition)
+    elif competition.format == Competition.Format.ROUND_ROBIN:
+        matches = generate_round_robin_draw(competition)
+    else:
+        raise ValidationError(_("Dieses Spielsystem wird noch nicht unterstützt."))
+    log_audit(user=actor, action="DRAW_COMPETITION", entity_type="Competition",
+              entity_id=competition.pk, changes={"format": competition.format, "matches": len(matches)})
+    return matches
 
 
 @transaction.atomic
@@ -480,6 +527,7 @@ def record_match_result(
     score: List[Dict[str, int]],
     winner: Entry,
     result_type: str = Match.ResultType.NORMAL,
+    actor: Optional[User] = None,
 ) -> Match:
     """Record match scores, validate tennis rules, and advance winner in bracket."""
     Competition.objects.select_for_update().get(pk=match.competition_id)
@@ -538,6 +586,8 @@ def record_match_result(
             nm.entry_b = winner
         nm.save(update_fields=["entry_a", "entry_b"])
 
+    log_audit(user=actor, action="RECORD_MATCH_RESULT", entity_type="Match",
+              entity_id=match.pk, changes={"winner_id": winner.pk, "score": score, "result_type": result_type})
     return match
 
 
@@ -548,6 +598,7 @@ def schedule_tournament_match(
     court: Court,
     start_dt,
     duration_minutes: int = 90,
+    actor: Optional[User] = None,
 ) -> Blocking:
     """
     Assign a match to a court slot, creating a court Blocking.
@@ -621,22 +672,23 @@ def schedule_tournament_match(
     match.blocking = blocking
     match.save(update_fields=["scheduled_court", "scheduled_start", "blocking"])
 
+    log_audit(user=actor, action="SCHEDULE_MATCH", entity_type="Match",
+              entity_id=match.pk, changes={"court_id": court.pk, "start": str(start_dt), "duration": duration_minutes})
     return blocking
 
 
-def expire_unconfirmed_entries() -> int:
+def expire_unconfirmed_entries(competition_id=None) -> int:
     """Release partner reservations and unpaid fees after the deadline."""
     from django.contrib.contenttypes.models import ContentType
 
     now = timezone.now()
-    competition_ids = (
-        Entry.objects.filter(
+    candidates = Entry.objects.filter(
             status=Entry.Status.PENDING_PARTNER,
             competition__tournament__registration_deadline__lt=now,
-        )
-        .values_list("competition_id", flat=True)
-        .distinct()
     )
+    if competition_id is not None:
+        candidates = candidates.filter(competition_id=competition_id)
+    competition_ids = candidates.values_list("competition_id", flat=True).distinct()
     count = 0
     for competition_id in competition_ids:
         with transaction.atomic():

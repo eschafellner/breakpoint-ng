@@ -45,6 +45,9 @@
       </div>
 
       {% if current_comp %}
+        {% if can_manage_tournaments %}
+          <p><a class="btn court" href="{% url 'tournaments:draw' current_comp.id %}">Teilnehmer prüfen und auslosen</a></p>
+        {% endif %}
         <!-- Registration Section if Open -->
         {% if tournament.status == 'OPEN' %}
           <div class="card" style="padding:20px 24px;margin-bottom:28px;background:#FDFCF9;border-left:5px solid var(--clay);">
@@ -56,7 +59,7 @@
                 </p>
               </div>
 
-              {% if user.is_authenticated %}
+              {% if user.is_authenticated and can_register %}
                 {% if user_entry %}
                   <div>
                     <span class="badge {% if user_entry.status == 'CONFIRMED' %}ok{% else %}warn{% endif %}">
@@ -78,10 +81,13 @@
                           <option value="{{ p.id }}">{{ p.get_full_name }}</option>
                         {% endfor %}
                       </select>
+                      <small>Partner erscheinen nach Freigabe der Sichtbarkeit in ihrem Profil.</small>
                     {% endif %}
                     <button type="submit" class="btn sm court">Jetzt anmelden</button>
                   </form>
                 {% endif %}
+              {% elif user.is_authenticated %}
+                <p>Du bist für dieses Turnier nicht teilnahmeberechtigt.</p>
               {% else %}
                 <a href="{% url 'accounts:login' %}?next={{ request.path }}" class="btn sm court">
                   Zum Anmelden einloggen
@@ -133,6 +139,17 @@
               <div style="padding:24px;text-align:center;color:var(--muted);">Noch keine Spiele erfasst.</div>
             {% endif %}
           </div>
+          <div class="card" style="padding:24px;margin-bottom:24px;">
+            <h3>Spiele und Ergebnisse</h3>
+            {% for m in bracket_data.matches %}
+              <div style="border:1px solid var(--border);border-radius:8px;margin-top:16px;padding:12px;">
+                <h4>{{ m.entry_a.display_name }} gegen {{ m.entry_b.display_name }}</h4>
+                {% if m.scheduled_start %}<p>{{ m.scheduled_start|date:"d.m.Y H:i" }} Uhr · {{ m.scheduled_court.name }}</p>{% endif %}
+                {% if m.winner %}<p>Sieger: {{ m.winner.display_name }} · {{ m.score_display }}</p>{% endif %}
+                {% include "tournaments/match_controls.html" %}
+              </div>
+            {% empty %}<p>Die Auslosung wurde noch nicht durchgeführt.</p>{% endfor %}
+          </div>
         {% else %}
           <!-- Knockout Bracket (T-3, T-8) -->
           <div class="card" style="padding:24px;overflow-x:auto;">
@@ -166,46 +183,7 @@
                             </span>
                           </div>
 
-                          <!-- Staff / Tournament Director Result Entry Trigger -->
-                          {% if can_manage_tournaments %}
-                            {% if not m.winner %}
-                              <details style="padding:8px 10px;">
-                                <summary>Spieltermin planen</summary>
-                                <form method="post" action="{% url 'tournaments:schedule_match' m.id %}">
-                                  {% csrf_token %}
-                                  <label>Platz <select name="court_id" class="input" required>{% for court in available_courts %}<option value="{{ court.id }}" {% if m.scheduled_court_id == court.id %}selected{% endif %}>{{ court.name }}</option>{% endfor %}</select></label>
-                                  <label>Beginn <input type="datetime-local" name="start" class="input" value="{{ m.scheduled_start|date:'Y-m-d\TH:i' }}" required></label>
-                                  <label>Dauer in Minuten <input type="number" name="duration" class="input" min="1" value="90" required></label>
-                                  <button type="submit" class="btn sm court">Termin speichern</button>
-                                </form>
-                              </details>
-                            {% endif %}
-                            {% if m.entry_a and m.entry_b and not m.winner %}
-                              <div style="padding:6px 10px;background:#FBF8F3;border-top:1px solid var(--border);text-align:right;">
-                                <details style="display:inline-block;text-align:left;">
-                                  <summary style="font-size:.78rem;cursor:pointer;color:var(--clay);font-weight:600;">
-                                    Ergebnis eintragen
-                                  </summary>
-                                  <div style="position:absolute;z-index:20;background:#fff;border:1px solid var(--border);padding:14px;border-radius:var(--radius);box-shadow:0 4px 14px rgba(0,0,0,.15);width:260px;margin-top:4px;">
-                                    <form method="post" action="{% url 'tournaments:match_result' m.id %}">
-                                      {% csrf_token %}
-                                      <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px;">Sieger:</label>
-                                      <select name="winner_id" class="input" style="font-size:.82rem;margin-bottom:6px;" required>
-                                        <option value="{{ m.entry_a.id }}">{{ m.entry_a.display_name }}</option>
-                                        <option value="{{ m.entry_b.id }}">{{ m.entry_b.display_name }}</option>
-                                      </select>
-                                      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px;">
-                                        <input type="text" name="set1" placeholder="6:4" class="input" style="font-size:.8rem;padding:4px;" required>
-                                        <input type="text" name="set2" placeholder="7:5" class="input" style="font-size:.8rem;padding:4px;" required>
-                                        <input type="text" name="set3" placeholder="10:8" class="input" style="font-size:.8rem;padding:4px;">
-                                      </div>
-                                      <button type="submit" class="btn sm court" style="width:100%;">Speichern</button>
-                                    </form>
-                                  </div>
-                                </details>
-                              </div>
-                            {% endif %}
-                          {% endif %}
+                          {% include "tournaments/match_controls.html" %}
                         </div>
                       {% endfor %}
                     </div>

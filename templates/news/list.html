@@ -20,7 +20,7 @@
     </div>
 
     {% if page_obj.object_list %}
-      <div class="news-grid" style="grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));">
+      <div class="grid-cards">
         {% for article in page_obj.object_list %}
           <div class="card">
             <div class="news-img" style="aspect-ratio:16/9;">

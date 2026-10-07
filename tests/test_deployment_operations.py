@@ -86,6 +86,7 @@ def test_production_beat_schedules_existing_tasks():
         "apps.members.tasks.task_end_expired_memberships",
         "apps.courts.tasks.send_booking_reminders",
         "apps.tournaments.tasks.expire_pending_partners",
+        "apps.core.tasks.deliver_pending_emails",
     }
     assert jobs["booking-reminders"]["schedule"].minute == {0}
     assert jobs["end-expired-memberships"]["schedule"].hour == {0}

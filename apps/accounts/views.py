@@ -13,8 +13,6 @@ from .forms import LoginForm, RegistrationForm, ProfileForm
 from .services import (
     register_user,
     verify_email,
-    record_failed_login,
-    reset_failed_logins,
     export_user_data,
 )
 from apps.core.services import log_audit
@@ -26,11 +24,9 @@ def login_view(request):
         return redirect("core:home")
 
     if request.method == "POST":
-        form = LoginForm(request.POST)
-        email = request.POST.get("email", "")
+        form = LoginForm(request.POST, request=request)
         if form.is_valid():
             user = form.user
-            reset_failed_logins(user)
             login(request, user)
             messages.success(
                 request,
@@ -45,20 +41,6 @@ def login_view(request):
             ):
                 next_url = "core:home"
             return redirect(next_url)
-        else:
-            # Check if this email exists to track failed attempts
-            is_locked = False
-            if not getattr(form, "credentials_valid", False):
-                is_locked = record_failed_login(
-                    email, ip_address=request.META.get("REMOTE_ADDR")
-                )
-            if is_locked:
-                messages.error(
-                    request,
-                    _(
-                        "Zu viele Fehlversuche. Dein Konto wurde für 15 Minuten vorübergehend gesperrt."
-                    ),
-                )
     else:
         form = LoginForm()
 
@@ -166,11 +148,11 @@ def profile_view(request):
         form = ProfileForm(instance=user)
 
     from apps.courts.models import Booking
-    from apps.billing.models import Charge
+    from apps.billing.selectors import get_user_charges
     from apps.members.selectors import get_active_members_directory
 
     recent_bookings = Booking.objects.filter(booked_by=user).order_by("-start")[:5]
-    charges = Charge.objects.filter(user=user).order_by("-due_date")[:10]
+    charges = get_user_charges(user)[:10]
     membership = get_active_members_directory().filter(user=user).first()
 
     context = {

@@ -77,6 +77,11 @@ class Charge(TimeStampedModel):
     @property
     def total_paid(self) -> Decimal:
         """Sum of all recorded payments."""
+        if hasattr(self, "_payment_total"):
+            return self._payment_total
+        prefetched = getattr(self, "_prefetched_objects_cache", {})
+        if "payments" in prefetched:
+            return sum((payment.amount for payment in prefetched["payments"]), Decimal("0.00"))
         agg = self.payments.aggregate(total=models.Sum("amount"))["total"]
         return agg or Decimal("0.00")
 

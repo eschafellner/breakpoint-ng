@@ -20,6 +20,10 @@ class AdminAccountChangeForm(UserChangeForm):
 
 
 class LoginForm(forms.Form):
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+
     email = forms.EmailField(
         label=_("E-Mail-Adresse"),
         widget=forms.EmailInput(
@@ -37,27 +41,22 @@ class LoginForm(forms.Form):
         password = cleaned_data.get("password")
 
         if email and password:
-            account = User.objects.filter(email__iexact=email).first()
             user = authenticate(
-                username=account.email if account else email.lower(), password=password
+                self.request, username=email, password=password
             )
             if not user:
                 raise forms.ValidationError(
                     _("E-Mail oder Passwort ist nicht korrekt.")
                 )
-            self.credentials_valid = True
-            if not user.email_verified:
-                raise forms.ValidationError(
-                    _("Bitte bestätige zuerst deine E-Mail-Adresse.")
-                )
-            if user.is_locked:
-                raise forms.ValidationError(
-                    _(
-                        "Dein Konto ist vorübergehend wegen zu vieler Fehlversuche gesperrt."
-                    )
-                )
             self.user = user
         return cleaned_data
+
+
+class AccountRecoveryForm(forms.Form):
+    email = forms.EmailField(
+        label=_("E-Mail-Adresse"),
+        widget=forms.EmailInput(attrs={"class": "input", "autocomplete": "email"}),
+    )
 
 
 class RegistrationForm(forms.Form):
@@ -196,6 +195,7 @@ class ProfileForm(forms.ModelForm):
             "address_zip",
             "address_city",
             "avatar",
+            "allow_partner_search",
         ]
         widgets = {
             "birth_date": forms.DateInput(attrs={"type": "date"}),

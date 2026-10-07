@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section"><div class="wrap" style="max-width:480px;"><div class="card" style="padding:28px;">
+  <h1>Anfrage erhalten</h1>
+  <p>Wenn für diese Adresse ein aktives Konto besteht und ein neuer Link angefordert werden kann, erhältst du eine E-Mail. Prüfe auch deinen Spam-Ordner.</p>
+  <p>Die Links sind 24 Stunden gültig. Warte mindestens eine Minute, bevor du erneut einen Link anforderst.</p>
+  <a href="{% url 'accounts:login' %}" class="btn court">Zur Anmeldung</a>
+</div></div></section>
+{% endblock %}

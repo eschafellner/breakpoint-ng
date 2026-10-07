@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -146,8 +147,11 @@ def book_slot_view(request):
             )
         except ValidationError as e:
             messages.error(request, e.message if hasattr(e, "message") else str(e))
-        except Exception as e:
-            messages.error(request, str(e))
+        except (ValueError, TypeError):
+            messages.error(request, _("Bitte gib gültige Buchungszeiten an."))
+        except Exception:
+            logging.getLogger(__name__).exception("Platzbuchung fehlgeschlagen")
+            messages.error(request, _("Die Buchung konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     return redirect(f"/courts/calendar/?date={request.POST.get('redirect_date', '')}")
 
@@ -162,8 +166,9 @@ def cancel_booking_view(request, booking_id):
             messages.success(request, _("Deine Buchung wurde erfolgreich storniert."))
         except ValidationError as e:
             messages.error(request, str(e))
-        except Exception as e:
-            messages.error(request, str(e))
+        except Exception:
+            logging.getLogger(__name__).exception("Stornierung für Buchung #%s fehlgeschlagen", booking.pk)
+            messages.error(request, _("Die Stornierung konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     next_url = (
         request.POST.get("next")
@@ -219,8 +224,13 @@ def blockings_view(request):
                 ) % {"cnt": len(cancelled)}
             messages.success(request, msg)
             return redirect("courts:blockings")
-        except Exception as e:
+        except ValidationError as e:
             messages.error(request, str(e))
+        except (ValueError, TypeError):
+            messages.error(request, _("Bitte gib gültige Sperrzeiten an."))
+        except Exception:
+            logging.getLogger(__name__).exception("Platzsperre fehlgeschlagen")
+            messages.error(request, _("Die Platzsperre konnte nicht gespeichert werden. Bitte versuche es erneut."))
 
     return render(
         request,

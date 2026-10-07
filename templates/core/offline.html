@@ -1,0 +1,35 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1E3B2F"><title>Offline – {{ club_settings.name }}</title>
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <style>
+    :root{--muted:#655f58}body{margin:0;background:#fbf8f3;color:#1e3b2f;font-family:system-ui,sans-serif;line-height:1.6}
+    .section{padding:40px 16px}.wrap{margin:auto}.card{background:white;border-radius:12px;border-top:4px solid #b94e33;box-shadow:0 3px 15px #0001}
+    h1{font-size:clamp(1.7rem,6vw,2.4rem)}h2{margin-top:28px}a{color:#923920;overflow-wrap:anywhere}
+    .btn{min-height:44px;padding:10px 16px;border:0;border-radius:6px;background:#1e3b2f;color:white;font:inherit;cursor:pointer}
+    .badge{padding:4px 8px;background:#f7e7ca;border-radius:4px}
+  </style>
+</head><body>
+<main class="section"><div class="wrap" style="max-width:680px;"><div class="card" style="padding:32px;">
+  <span class="badge warn" id="offlineStatusBadge">Offline-Modus</span>
+  <h1>Verbindung unterbrochen</h1>
+  <p>Platzbuchungen und aktuelle Belegungen benötigen eine Verbindung zum Vereinssystem.</p>
+  <button type="button" class="btn court" id="retryConnection">Verbindung erneut prüfen</button>
+  <h2>Vereinsinfos &amp; Notfallkontakt</h2>
+  <p><strong>{{ club_settings.name }}</strong></p>
+  {{ club_settings.offline_emergency_info|linebreaks }}
+  {% if club_settings.phone %}<p>Telefon: <a href="tel:{{ club_settings.phone }}">{{ club_settings.phone }}</a></p>{% endif %}
+  {% if club_settings.email %}<p>E-Mail: <a href="mailto:{{ club_settings.email }}">{{ club_settings.email }}</a></p>{% endif %}
+  {% if club_settings.address %}<p>{{ club_settings.address }}</p>{% endif %}
+  <p style="color:var(--muted);">Zuletzt aktualisiert: {{ updated_at|date:"d.m.Y H:i" }} Uhr</p>
+</div></div></main>
+<script>
+  document.getElementById('retryConnection').addEventListener('click', () => window.location.reload());
+  window.addEventListener('online', () => {
+    document.getElementById('offlineStatusBadge').textContent = 'Verbindung wiederhergestellt';
+    window.location.reload();
+  });
+</script>
+</body></html>

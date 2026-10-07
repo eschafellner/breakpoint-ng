@@ -128,6 +128,10 @@ def record_payment(
     current.save(update_fields=["status"])
     charge.status = current.status
 
+    # Discard the caller's earlier dashboard snapshot after recording a payment.
+    charge.__dict__.pop("_payment_total", None)
+    getattr(charge, "_prefetched_objects_cache", {}).pop("payments", None)
+
     log_audit(
         user=recorded_by,
         action="RECORD_PAYMENT",
@@ -281,7 +285,7 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
                 user=mem.user,
                 kind=Charge.Kind.MEMBERSHIP_FEE,
                 amount=fee,
-                due_date=due,
+                due_date=max(due, mem.start_date),
                 period_start=m_start,
                 period_end=m_end,
                 description=f"Mitgliedsbeitrag {mem.type.name} {m:02d}/{year}",

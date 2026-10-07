@@ -1,0 +1,40 @@
+{% if can_manage_tournaments %}
+  <div style="padding:12px;border-top:1px solid var(--border);">
+    {% if not m.winner %}
+      <details>
+        <summary>Spieltermin planen</summary>
+        <form method="post" action="{% url 'tournaments:schedule_match' m.id %}" style="display:grid;gap:8px;margin-top:12px;">
+          {% csrf_token %}
+          <label>Platz <select name="court_id" class="input" required>{% for court in available_courts %}<option value="{{ court.id }}" {% if m.scheduled_court_id == court.id %}selected{% endif %}>{{ court.name }}</option>{% endfor %}</select></label>
+          <label>Beginn <input type="datetime-local" name="start" class="input" value="{{ m.scheduled_start|date:'Y-m-d\TH:i' }}" required></label>
+          <label>Dauer in Minuten <input type="number" name="duration" class="input" min="1" value="90" required></label>
+          <button type="submit" class="btn sm court">Termin speichern</button>
+        </form>
+      </details>
+    {% endif %}
+    {% if m.entry_a and m.entry_b %}
+      <details style="margin-top:8px;">
+        <summary>{% if m.winner %}Ergebnis korrigieren{% else %}Ergebnis eintragen{% endif %}</summary>
+        <form method="post" action="{% url 'tournaments:match_result' m.id %}" style="display:grid;gap:8px;margin-top:12px;">
+          {% csrf_token %}
+          <label>Sieger <select name="winner_id" class="input" required>
+            <option value="{{ m.entry_a.id }}" {% if m.winner_id == m.entry_a_id %}selected{% endif %}>{{ m.entry_a.display_name }}</option>
+            <option value="{{ m.entry_b.id }}" {% if m.winner_id == m.entry_b_id %}selected{% endif %}>{{ m.entry_b.display_name }}</option>
+          </select></label>
+          <label>Ergebnistyp <select name="result_type" class="input">
+            <option value="NORMAL" {% if m.result_type == 'NORMAL' %}selected{% endif %}>Regulär beendet</option>
+            <option value="RETIRED" {% if m.result_type == 'RETIRED' %}selected{% endif %}>Aufgabe</option>
+            <option value="WALKOVER" {% if m.result_type == 'WALKOVER' %}selected{% endif %}>Nicht angetreten</option>
+          </select></label>
+          <div class="grid-2">
+            <label>1. Satz <input type="text" name="set1" class="input" placeholder="6:4" value="{{ m.score.0.a }}{% if m.score.0 %}:{% endif %}{{ m.score.0.b }}"></label>
+            <label>2. Satz <input type="text" name="set2" class="input" placeholder="7:5" value="{{ m.score.1.a }}{% if m.score.1 %}:{% endif %}{{ m.score.1.b }}"></label>
+          </div>
+          <label>Match-Tiebreak (optional) <input type="text" name="set3" class="input" placeholder="10:8" value="{{ m.score.2.a }}{% if m.score.2 %}:{% endif %}{{ m.score.2.b }}"></label>
+          <p style="font-size:.85rem;color:var(--muted);">Bei regulärem Ende sind zwei Gewinnsätze erforderlich. Bei Nichtantritt kann das Ergebnis leer bleiben.</p>
+          <button type="submit" class="btn sm court">Ergebnis speichern</button>
+        </form>
+      </details>
+    {% endif %}
+  </div>
+{% endif %}

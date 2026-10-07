@@ -20,6 +20,22 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ("account_type", "email_verified", "is_staff", "is_superuser")
     search_fields = ("email", "first_name", "last_name", "phone")
     ordering = ("email",)
+    actions = ["send_access_links"]
+
+    @admin.action(description="Einladungs- oder Bestätigungslink senden")
+    def send_access_links(self, request, queryset):
+        from .services import request_account_recovery
+
+        for user in queryset:
+            request_account_recovery(user.email, request.build_absolute_uri("/").rstrip("/"))
+        self.message_user(request, "Die Zugangsanfragen wurden verarbeitet.")
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change and not obj.email_verified:
+            from .services import request_account_recovery
+
+            request_account_recovery(obj.email, request.build_absolute_uri("/").rstrip("/"))
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),

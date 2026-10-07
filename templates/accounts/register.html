@@ -29,7 +29,7 @@
           {% if form.account_type.errors %}<small style="color:var(--err);">{{ form.account_type.errors.0 }}</small>{% endif %}
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="grid-2">
           <div class="field">
             <label for="id_first_name">Vorname *</label>
             <input type="text" name="first_name" id="id_first_name" value="{{ form.first_name.value|default:'' }}" class="input" required>
@@ -48,7 +48,7 @@
           {% if form.email.errors %}<small style="color:var(--err);">{{ form.email.errors.0 }}</small>{% endif %}
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="grid-2">
           <div class="field">
             <label for="id_phone">Telefon</label>
             <input type="text" name="phone" id="id_phone" value="{{ form.phone.value|default:'' }}" class="input">
@@ -64,7 +64,7 @@
           <input type="text" name="address_street" id="id_address_street" value="{{ form.address_street.value|default:'' }}" class="input">
         </div>
 
-        <div style="display:grid;grid-template-columns:100px 1fr;gap:12px;">
+        <div class="grid-split">
           <div class="field">
             <label for="id_address_zip">PLZ</label>
             <input type="text" name="address_zip" id="id_address_zip" value="{{ form.address_zip.value|default:'' }}" class="input">
@@ -75,7 +75,7 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="grid-2">
           <div class="field">
             <label for="id_password">Passwort (mind. 8 Zeichen) *</label>
             <input type="password" name="password" id="id_password" class="input" required>

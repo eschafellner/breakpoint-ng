@@ -1,23 +1,34 @@
 from decimal import Decimal
 from typing import Optional, Dict, Any
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, OuterRef, Subquery, DecimalField, Value, F, Case, When, Count
+from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 from apps.accounts.models import User
 from .models import Charge, Payment, PriceRule, BookingExtra
 
 
+def charges_with_payment_totals():
+    # A subquery avoids multiplying charge amounts by the payment join.
+    sums = Payment.objects.filter(charge_id=OuterRef("pk")).order_by().values("charge_id").annotate(
+        total=Sum("amount")
+    ).values("total")
+    money = DecimalField(max_digits=10, decimal_places=2)
+    return Charge.objects.annotate(_payment_total=Coalesce(
+        Subquery(sums, output_field=money), Value(Decimal("0.00")), output_field=money
+    ))
+
+
 def get_user_charges(user: User):
     """Return all charges for a specific user."""
     return (
-        Charge.objects.filter(user=user)
-        .prefetch_related("payments")
+        charges_with_payment_totals().filter(user=user)
         .order_by("-due_date", "-id")
     )
 
 
 def get_cashier_charges(status: Optional[str] = None, search: Optional[str] = None):
     """Filtered charges query for cashier dashboard."""
-    qs = Charge.objects.select_related("user").prefetch_related("payments")
+    qs = charges_with_payment_totals().select_related("user")
     if status:
         qs = qs.filter(status=status)
     if search:
@@ -34,24 +45,23 @@ def get_cashier_charges(status: Optional[str] = None, search: Optional[str] = No
 def get_billing_summary() -> Dict[str, Any]:
     """Summary figures for Kassier dashboard."""
     today = timezone.localdate()
-    all_charges = Charge.objects.all()
-
-    total_amount = all_charges.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
-    outstanding = all_charges.filter(
-        status__in=[Charge.Status.OPEN, Charge.Status.PARTIAL]
-    ).prefetch_related("payments")
-    open_amount_agg = sum((c.open_amount for c in outstanding), Decimal("0.00"))
+    pending = Q(status__in=[Charge.Status.OPEN, Charge.Status.PARTIAL])
+    money = DecimalField(max_digits=12, decimal_places=2)
+    zero = Value(Decimal("0.00"), output_field=money)
+    all_charges = charges_with_payment_totals().annotate(_outstanding=Case(
+        When(pending, then=Greatest(F("amount") - F("_payment_total"), zero)),
+        default=zero, output_field=money,
+    ))
+    summary = all_charges.aggregate(
+        total=Sum("amount"), outstanding=Sum("_outstanding"),
+        overdue=Count("pk", filter=pending & Q(due_date__lt=today)),
+    )
     paid_amount_agg = Payment.objects.aggregate(s=Sum("amount"))["s"] or Decimal("0.00")
-    overdue_count = all_charges.filter(
-        status__in=[Charge.Status.OPEN, Charge.Status.PARTIAL],
-        due_date__lt=today,
-    ).count()
-
     return {
-        "total_amount": total_amount,
-        "open_amount": open_amount_agg,
+        "total_amount": summary["total"] or Decimal("0.00"),
+        "open_amount": summary["outstanding"] or Decimal("0.00"),
         "paid_amount": paid_amount_agg,
-        "overdue_count": overdue_count,
+        "overdue_count": summary["overdue"],
     }
 
 
