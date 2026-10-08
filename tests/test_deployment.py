@@ -393,6 +393,7 @@ def test_deploy_publishes_only_after_successful_checks(
 docker() {
     printf '%s\n' "$*" >> "$DOCKER_TEST_LOG"
     case "$*" in
+        *"config prepare") printf 'services:\n  prepare:\n    image: ghcr.io/test/breakpoint-ng:v1.0.0\n' ;;
         *"ps -a -q prepare") printf 'prepare-test-id\n' ;;
         "wait prepare-test-id") printf '%s\n' "$PREPARE_TEST_EXIT" ;;
         *"python scripts/check_deployment.py") return "$HTTP_TEST_EXIT" ;;

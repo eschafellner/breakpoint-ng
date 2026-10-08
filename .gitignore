@@ -50,4 +50,5 @@ htmlcov/
 
 # Environment
 .env
+.env.release.*
 !.env.example

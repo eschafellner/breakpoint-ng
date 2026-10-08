@@ -1,6 +1,5 @@
 x-app: &app
-  build: .
-  image: breakpoint-ng:local
+  image: ${APP_IMAGE:?APP_IMAGE muss auf ein veröffentlichtes Release-Image zeigen (siehe RELEASE_IMAGES.md)}
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.prod
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY muss gesetzt sein}
@@ -81,10 +80,11 @@ services:
       start_period: 15s
 
   nginx:
-    image: nginx:stable-alpine
+    image: ${NGINX_IMAGE:-nginx:1.30.5-alpine}
     restart: always
     volumes:
-      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Private SELinux label permits this read-only bind mount on enforcing hosts.
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro,Z
       - static_prod_volume:/app/staticfiles:ro
       - media_prod_volume:/app/media:ro
     depends_on:
@@ -130,7 +130,7 @@ services:
 
   # Configure the tunnel's origin as http://nginx:80 (previously web:8000).
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.0}
     restart: always
     command: tunnel --metrics 0.0.0.0:2000 run
     environment:

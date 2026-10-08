@@ -1,8 +1,13 @@
 # Breakpoint-NG: Deployment Schritt für Schritt
 
-Stand: 03.10.2026. Diese Anleitung gilt für die Produktion mit Docker,
+Stand: 07.10.2026. Diese Anleitung gilt für die Produktion mit Docker,
 Nginx und Cloudflare Tunnel. Die Entwicklung verwendet weiterhin
 `docker-compose.yml` und den Django-Entwicklungsserver.
+
+**Für laufende Updates:** [kurze Update-Anleitung](UPDATES.md).
+**Für das erste Release-Image:** [Anleitung für Einsteiger](RELEASE_IMAGES.md).
+Die Produktion lädt fertige, versionierte Images aus einer Container Registry;
+ein Build auf dem Vereinsserver ist nicht mehr Teil des Update-Ablaufs.
 
 ## Zum Einstieg: Was muss miteinander verbunden sein?
 
@@ -38,7 +43,8 @@ Entwickler gedacht.
 
 ## 1. Voraussetzungen prüfen
 
-Auf dem Server werden Git, Bash, gzip und Docker mit Linux-Containern sowie
+Auf dem Server werden Git für die erstmalige Bereitstellung der Deployment-Dateien,
+Bash, awk, gzip und Docker mit Linux-Containern sowie
 eine aktuelle Docker-Compose-Version (v2 oder neuer) benötigt. Für den
 Produktivbetrieb ist ein Linux-Server vorgesehen. Unter Windows dieselben
 Skripte in Git Bash mit Docker Desktop im Linux-Modus ausführen.
@@ -96,6 +102,8 @@ Texteditor eintragen; Beispielwerte aus der Vorlage müssen ersetzt werden.
 
 | Variable | Einzutragender Wert |
 | --- | --- |
+| `APP_IMAGE` | Adresse eines fertig veröffentlichten Release-Images, z. B. `ghcr.io/eschafellner/breakpoint-ng:v0.1.0`; zuerst [erstellen](RELEASE_IMAGES.md) |
+| `NGINX_IMAGE`, `CLOUDFLARED_IMAGE` | Fest gewählte Infrastruktur-Versionen aus der Vorlage; separat aktualisieren |
 | `DJANGO_SECRET_KEY` | Eigener zufälliger Schlüssel; auf einem bestehenden System behalten |
 | `DJANGO_SECRET_KEY_FALLBACKS` | Normalerweise leer; alte Schlüssel nur bei geplanter Rotation |
 | `DJANGO_ALLOWED_HOSTS` | Vereinsdomain(s), durch Kommas getrennt, ohne `https://` |
@@ -217,7 +225,12 @@ Die Compose-Datei verändert die Dashboard-Route und DNS-Einträge nicht.
 Grundlage: [Cloudflare-Tunneleinrichtung](https://developers.cloudflare.com/tunnel/get-started/).
 Eine bestehende Installation ist während der Umstellung kurzzeitig unterbrochen.
 
-## 5. Deployment ausführen
+## 5. Deployment mit einem fertigen Release-Image ausführen
+
+Das unter `APP_IMAGE` eingetragene Image muss bereits veröffentlicht und für den
+Server zugänglich sein. Das Erstellen und den Zugriff erklärt
+[RELEASE_IMAGES.md](RELEASE_IMAGES.md). Die Beispielversion aus `.env.example`
+ist kein Nachweis, dass dieses Image bereits existiert.
 
 ```bash
 docker compose -f docker-compose.prod.yml config --quiet
@@ -227,8 +240,9 @@ bash scripts/deploy.sh
 Der Ablauf ist bei Erstinstallation und Updates derselbe:
 
 1. Ein Deployment-Lock verhindert gleichzeitige Skriptläufe.
-2. Konfiguration prüfen, Anwendung bauen, öffentliche Domain/Hosts/CSRF prüfen,
-   Nginx-/Tunnel-Images herunterladen.
+2. Konfiguration prüfen, ausgewähltes Release-Image herunterladen und öffentliche
+   Domain/Hosts/CSRF prüfen. Infrastruktur-Images nur herunterladen, falls sie
+   lokal fehlen; es wird kein Anwendungsimage gebaut.
    Fehler in dieser Phase stoppen die bisher laufende Anwendung nicht.
 3. PostgreSQL und Redis starten und auf Bereitschaft warten.
 4. Tunnel, Nginx, Web und Celery für das Wartungsfenster stoppen.
@@ -240,7 +254,8 @@ Der Ablauf ist bei Erstinstallation und Updates derselbe:
 8. Nginx-Konfiguration sowie echte HTTP-Auslieferung von Vereins-/Admin-CSS,
    Startseite und vorhandenen öffentlichen Bildern prüfen.
 9. Celery Worker und Beat starten und ihre Healthchecks abwarten.
-10. Tunnel starten und auf die Cloudflare-Verbindung warten (`/ready`).
+10. Den bestehenden Tunnel wieder starten (bei einer Erstinstallation anlegen)
+    und auf die Cloudflare-Verbindung warten (`/ready`).
 11. Mit dem kurzlebigen Hilfsdienst `tunnel_probe` aus dem Netzwerk des
     Tunnel-Containers Nginx, Anwendung und CSS prüfen.
 12. Über `PUBLIC_SITE_URL` bis zu 60 Sekunden auf drei aufeinanderfolgende
@@ -326,18 +341,59 @@ Prüfstand: [DEPLOYMENT_PRUEFUNG.md](DEPLOYMENT_PRUEFUNG.md).
 ## 8. Laufende Updates einspielen
 
 ```bash
-bash update.sh
+bash update.sh v0.1.1
 ```
 
-Das Skript verweigert lokale Änderungen, holt Code mit `git pull --ff-only`
-und verwendet anschließend denselben Deployment-Ablauf mit Backup und Tests.
-Bei Cloudflare Access entsprechend `bash update.sh --skip-public-check` verwenden
-und anschließend die öffentliche Website im angemeldeten Browser prüfen.
-Ein Wartungsfenster ist einzuplanen. Vor einem eigenen manuellen Checkout die
-Änderungen prüfen; für bereits ausgecheckten Code `bash scripts/deploy.sh` verwenden.
+`v0.1.1` durch die gewünschte, fertig veröffentlichte Version ersetzen. Der
+Workflow **Release image** muss zuvor erfolgreich beendet sein. Die Kurzform
+verwendet `ghcr.io/eschafellner/breakpoint-ng`; bei einem anderen Repository die
+vollständige Image-Adresse aus der Workflow-Zusammenfassung angeben.
+
+Das Skript lädt das ausgewählte Image, prüft es vor dem Wartungsfenster und
+speichert die Auswahl in der bestehenden `.env`. Es führt kein `git pull` und
+keinen Build aus. Backup, Migrationen und die bisherigen Website-Prüfungen
+bleiben Teil des Ablaufs. `bash update.sh` ohne Versionsangabe verwendet das
+bereits in `.env` ausgewählte Image erneut. `latest` wird nicht akzeptiert.
+
+Bei Cloudflare Access entsprechend
+`bash update.sh v0.1.1 --skip-public-check` verwenden und anschließend die
+öffentliche Website im angemeldeten Browser prüfen. Ein Wartungsfenster ist
+einzuplanen. Schritt für Schritt sowie einmalige Umstellung:
+[UPDATES.md](UPDATES.md). Die Veröffentlichung eines Images installiert es
+nicht automatisch auf dem Server.
+
+Compose-Dateien, Host-Skripte und `deploy/nginx/default.conf` liegen weiterhin
+im Serververzeichnis. Falls ein Release diese Deployment-Dateien ändert, stehen
+die notwendigen Schritte in seinen Release-Hinweisen. Solche Änderungen separat
+übernehmen; ein normales Anwendungsupdate benötigt keinen neuen Git-Checkout.
 
 Ein `docker compose restart` kopiert keinen neuen Quellcode ins Image.
 Migrationen werden bei Fehlern nicht automatisch zurückgesetzt.
+Die gewählte Version bleibt nach einem Fehler während des Wartungsfensters in
+`.env`, damit der nächste Versuch dasselbe Ziel verwendet. Ein älteres Image
+allein setzt keine Datenbankmigration zurück.
+
+### Nginx und Cloudflare bewusst aktualisieren
+
+`NGINX_IMAGE` und `CLOUDFLARED_IMAGE` legen feste Versionen fest. Normale
+Anwendungsupdates fragen dafür keine neuere Registry-Version ab, solange die
+Images lokal vorliegen. Für ein geplantes Infrastrukturupdate passende konkrete
+Versionen in `.env` eintragen und dann ausführen:
+
+```bash
+bash update.sh --update-infrastructure
+```
+
+Die Option lädt ausdrücklich die eingetragenen Nginx-/Tunnel-Images vor dem
+Wartungsfenster. Es gelten weiterhin alle Backups und Prüfungen. Nginx wird auch
+beim normalen Update mit derselben gewählten Version neu erstellt, damit es die
+aktuelle Adresse des Webcontainers verwendet. Ein unverändert konfigurierter
+Tunnelcontainer wird weiterverwendet.
+
+PostgreSQL-/Redis-Versionswechsel sind gesonderte Betriebsarbeiten. Ihre Images
+werden im normalen Ablauf nur geladen, wenn sie lokal fehlen. Einen Wechsel
+der PostgreSQL-Hauptversion nicht durch einen anderen Image-Tag am bestehenden
+Daten-Volume versuchen; dafür ist ein eigener Migrations-/Restore-Plan nötig.
 
 ## 9. Backups erstellen und außerhalb des Servers sichern
 
@@ -350,10 +406,10 @@ Dies erzeugt zwei zusammengehörige Dateien mit gleichem Zeitstempel:
 - `backups/db_backup_<zeitstempel>.sql.gz`: PostgreSQL-Dump mit Container-Zugangsdaten.
 - `backups/media_backup_<zeitstempel>.tar.gz`: Inhalt von `media_prod_volume`.
 
-Das Skript benötigt eine laufende DB und das gebaute Anwendungsimage mit
+Das Skript benötigt eine laufende DB und das heruntergeladene Anwendungsimage mit
 `scripts/media_archive.py`. Ein vorhandener Webcontainer muss dabei nicht laufen.
-Bei der erstmaligen Übernahme dieser Skripte zuvor
-`docker compose -f docker-compose.prod.yml build prepare` ausführen.
+Wenn das ausgewählte Image lokal fehlt, zuvor
+`docker compose -f docker-compose.prod.yml pull prepare` ausführen.
 
 Während eines normalen Online-Backups können Uploads geändert werden. Für ein
 zusammenpassendes DB-/Medien-Backup die schreibenden Anwendungsdienste zuerst
@@ -397,13 +453,15 @@ leeren System mit den zum Backup passenden Anwendungsversionen geprüft werden.
 
 ### Wiederherstellung auf einem neuen System
 
-1. Repository bereitstellen, die gesicherte `.env` übernehmen und das zum Backup
-   passende Git-Release auschecken. Die aktuellen Restore-Hilfsskripte benötigen
+1. Deployment-Dateien bereitstellen, die gesicherte `.env` übernehmen und unter
+   `APP_IMAGE` das zum Backup passende Release-Image auswählen. Falls dessen
+   Release-Hinweise andere Deployment-Dateien verlangen, diese ebenfalls übernehmen.
+   Die aktuellen Restore-Hilfsskripte benötigen
    ein Image, das `scripts/media_archive.py` enthält.
-2. Image bauen und nur DB/Redis starten:
+2. Images herunterladen und nur DB/Redis starten:
 
    ```bash
-   docker compose -f docker-compose.prod.yml build prepare
+   docker compose -f docker-compose.prod.yml pull prepare db redis
    docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 120 db redis
    ```
 
@@ -479,7 +537,7 @@ docker compose -f docker-compose.prod.yml run --rm --no-deps -T tunnel_probe
 docker compose -f docker-compose.prod.yml exec -T web python scripts/check_deployment.py --public
 ```
 
-Der dritte Befehl benötigt einen laufenden Compose-Tunnel und das neue gebaute
+Der dritte Befehl benötigt einen laufenden Compose-Tunnel und das heruntergeladene
 Anwendungsimage. Der Hilfscontainer wird danach automatisch entfernt. Er verwendet
 das [Netzwerk des Tunnel-Containers](https://docs.docker.com/reference/compose-file/services/#network_mode);
 ein zusätzlicher Port am Server ist dafür nicht nötig. Das minimale
@@ -517,6 +575,7 @@ docker compose -f docker-compose.prod.yml logs --tail=100 cloudflared nginx web 
 | Nur öffentliche URL fehlerhaft | Cloudflare-Hostheader, Cache/Access und `PUBLIC_SITE_URL` prüfen |
 | Migration oder Backup fehlgeschlagen | Dienste gestoppt lassen, Logs und freien Speicher prüfen |
 | Nginx liefert 502 | Web-Healthcheck, Gunicorn-Logs und Nginx-Konfiguration prüfen |
+| Nginx kann `default.conf` nicht lesen (`Permission denied`) | Bei einem Linux-Host mit SELinux die aktuelle Compose-Datei mit dem Konfigurationsmount `:ro,Z` verwenden; Dateizugriff und Mount prüfen |
 | CSRF-Fehler | Öffentliche Domain, HTTPS-Origin und weitergeleitetes Protokoll prüfen |
 | Celery startet nicht | Redis, Worker-Healthcheck und Celery-Logs prüfen |
 | Tunnel verbindet nicht | Token, ausgehende Verbindung und Tunnel-Logs prüfen |
@@ -584,7 +643,7 @@ simulierte Docker-Aufrufe und berühren keine Produktionsdaten.
 Ein echter PostgreSQL-Restore und ein vollständiger Compose-Start müssen
 zusätzlich auf einem Docker-System geprüft werden.
 
-Die sieben Tests mit parallelen Datenbanktransaktionen benötigen PostgreSQL;
+Die Tests mit parallelen Datenbanktransaktionen benötigen PostgreSQL;
 unter SQLite werden sie ausdrücklich übersprungen. Mit einer getrennten lokalen
 Testinstanz (kein Produktionsserver) lässt sich die vollständige Suite so starten:
 
@@ -602,5 +661,6 @@ Ergebnisse und fachliche Grenzen: [CODE_PRUEFUNG.md](CODE_PRUEFUNG.md).
 Technische Referenzen:
 [Compose-Startabhängigkeiten](https://docs.docker.com/compose/how-tos/startup-order/),
 [Docker-Volumes](https://docs.docker.com/engine/storage/volumes/),
+[SELinux bei Dateieinbindungen](https://docs.docker.com/engine/storage/bind-mounts/#configure-the-selinux-label),
 [PostgreSQL-Dumps](https://www.postgresql.org/docs/16/app-pgdump.html),
 [Cloudflare-Verbindungsprüfung](https://developers.cloudflare.com/tunnel/guides/kubernetes/).

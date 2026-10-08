@@ -34,12 +34,12 @@ done <<< "$running"
 
 echo "-> Prüfe beide Archive vor der Wiederherstellung..."
 gzip -t -- "$DB_BACKUP"
-"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py validate < "$MEDIA_BACKUP"
+"${compose[@]}" run --rm --no-deps --pull never -T --entrypoint python web scripts/media_archive.py validate < "$MEDIA_BACKUP"
 
 echo "-> Stelle PostgreSQL transaktional wieder her..."
 gunzip -c -- "$DB_BACKUP" | "${compose[@]}" exec -T db sh -c 'exec psql --set=ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" "$POSTGRES_DB"'
 
 echo "-> Stelle das Docker-Medien-Volume wieder her..."
-"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py restore < "$MEDIA_BACKUP"
+"${compose[@]}" run --rm --no-deps --pull never -T --entrypoint python web scripts/media_archive.py restore < "$MEDIA_BACKUP"
 
 echo "Wiederherstellung abgeschlossen. Anwendung erst mit bash scripts/deploy.sh starten."

@@ -103,7 +103,7 @@ Die Pytest-Suite prüft Geschäftslogik, Berechtigungen und Buchungsabläufe mit
 ```bash
 pytest
 ```
-Die Tests umfassen die 42 ursprünglichen Akzeptanztests sowie Regressionen zu Anmeldung, Mitgliedschaften, Zahlungen, Buchungen, Turnieren, Migrationen und Deployment. Echte Nginx-HTTP-Tests benötigen Nginx (`NGINX_BINARY`), die Preisvorschau-Prüfung Node.js. Sieben Paralleltests benötigen PostgreSQL und werden unter SQLite übersprungen. GitHub Actions enthält beide Datenbankläufe. Prüfstand und Grenzen: [CODE_PRUEFUNG.md](CODE_PRUEFUNG.md).
+Die Tests umfassen die 42 ursprünglichen Akzeptanztests sowie Regressionen zu Anmeldung, Mitgliedschaften, Zahlungen, Buchungen, Turnieren, Migrationen und Deployment. Echte Nginx-HTTP-Tests benötigen Nginx (`NGINX_BINARY`), die Preisvorschau-Prüfung Node.js. Paralleltests benötigen PostgreSQL und werden unter SQLite übersprungen. GitHub Actions enthält beide Datenbankläufe. Prüfstand und Grenzen: [CODE_PRUEFUNG.md](CODE_PRUEFUNG.md).
 
 ---
 
@@ -118,7 +118,8 @@ zuerst die Berechtigung; Nginx überträgt anschließend die Datei.
 cp .env.example .env
 # PUBLIC_SITE_URL=https://DEINE-DOMAIN sowie Hosts, CSRF-Origin und Token setzen.
 
-# Erstdeployment: Image bauen, Migrationen, collectstatic und HTTP-Prüfung:
+# APP_IMAGE auf ein fertig veröffentlichtes Release setzen.
+# Erstdeployment: Image laden, Migrationen, collectstatic und HTTP-Prüfung:
 bash scripts/deploy.sh
 ```
 
@@ -138,7 +139,12 @@ Die [Schritt-für-Schritt-Anleitung mit 502-Diagnose](DEPLOYMENT.md) erklärt di
 Dashboard-Einstellungen und erwarteten Ergebnisse.
 
 ### Wartung & Updates
-- Updates mit einem Befehl: `bash update.sh`
+
+- Neue Version mit einem Befehl: `bash update.sh v0.1.1` (tatsächlich veröffentlichte Version einsetzen).
+- Kurze Anleitung für den Betreiber: [UPDATES.md](UPDATES.md).
+- Release-Images mit GitHub erstellen, ohne selbst Docker bauen zu müssen: [RELEASE_IMAGES.md](RELEASE_IMAGES.md).
+- `APP_IMAGE` legt die Version fest. `bash update.sh` installiert die gewählte Version erneut; der Server führt keinen Build und kein `git pull` aus.
+- Nginx-/Tunnel-Images verwenden feste Versionen. Geplante Infrastrukturupdates: Versionen in `.env` wählen und `bash update.sh --update-infrastructure` ausführen.
 - Es gibt ein Wartungsfenster während Migrationen und Containerwechsel.
 - Ein `docker compose restart` übernimmt keinen neuen Anwendungscode.
 - Ausführliche Deployment- und Diagnoseanleitung: [DEPLOYMENT.md](DEPLOYMENT.md).

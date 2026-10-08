@@ -18,8 +18,8 @@ echo "-> Sichere PostgreSQL..."
 gzip -t -- "$db_partial"
 
 echo "-> Sichere das Docker-Medien-Volume..."
-"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py backup > "$media_partial"
-"${compose[@]}" run --rm --no-deps -T --entrypoint python web scripts/media_archive.py validate < "$media_partial"
+"${compose[@]}" run --rm --no-deps --pull never -T --entrypoint python web scripts/media_archive.py backup > "$media_partial"
+"${compose[@]}" run --rm --no-deps --pull never -T --entrypoint python web scripts/media_archive.py validate < "$media_partial"
 
 mv -- "$db_partial" "$DB_FILE"
 mv -- "$media_partial" "$MEDIA_FILE"

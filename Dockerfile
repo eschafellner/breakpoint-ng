@@ -13,11 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy application source code
-COPY . /app/
+# Install dependencies in a separate layer so source/template changes reuse it.
+COPY pyproject.toml /tmp/dependencies/pyproject.toml
+RUN python -c 'import pathlib, tomllib; p = tomllib.loads(pathlib.Path("/tmp/dependencies/pyproject.toml").read_text()); pathlib.Path("/tmp/dependencies/requirements.txt").write_text("\n".join(p["build-system"]["requires"] + ["wheel"] + p["project"]["dependencies"]) + "\n")' \
+    && pip install --no-cache-dir -r /tmp/dependencies/requirements.txt
 
-# Install the project only after its packages and README are present.
-RUN pip install --no-cache-dir .
+# Install the application after its packages and README are present.
+COPY . /app/
+RUN pip install --no-cache-dir --no-deps --no-build-isolation .
 
 # Create directories for media, staticfiles, and logs
 RUN mkdir -p /app/staticfiles /app/media /app/logs /app/celerybeat

@@ -1,4 +1,53 @@
-# Deployment-Prüfung: Cloudflare-502 vom 03.10.2026
+# Deployment-Prüfungen und Betriebsgrenzen
+
+## Umstellung auf Release-Images vom 07.10.2026
+
+Die Produktion verwendet jetzt `APP_IMAGE` statt eines lokalen Builds. Normale
+Updates laden ein gewähltes Release, sichern Daten und führen weiterhin alle
+Migrationen und Website-Prüfungen aus. Nginx und cloudflared sind auf konkrete
+Versionen festgelegt; ein erneuter Infrastruktur-Download ist ausdrücklich
+mit `--update-infrastructure` wählbar. Der bestehende Tunnelcontainer wird bei
+unveränderter Konfiguration weiterverwendet.
+
+Ein neuer GitHub-Workflow prüft Anwendung und Deployment vor dem Image-Build,
+prüft die gepackte Anwendung und veröffentlicht Images für AMD64 und ARM64.
+Der Workflow wird durch einen veröffentlichten GitHub-Release ausgelöst.
+[RELEASE_IMAGES.md](RELEASE_IMAGES.md) und [UPDATES.md](UPDATES.md) beschreiben
+Erstellung, Zugriff und Installation. Die folgenden Abschnitte dokumentieren
+die frühere Prüfung; deren Hinweise auf lokale Builds und bewegliche
+Nginx-/Tunnel-Tags gelten für den damaligen Stand.
+
+Der neue GitHub-Workflow muss nach Übernahme der Dateien mit einem echten Release
+auf GitHub ausgeführt werden. Eine lokale Prüfung bestätigt keine Veröffentlichung
+bei GHCR und keine Verbindung zum produktiven Cloudflare-Tunnel.
+
+### Lokale Validierung der Umstellung
+
+- Docker-Image mit Python 3.12 und Django 6.0.9 erfolgreich gebaut. Ein erneuter
+  Build nach Quellcodeänderungen verwendet die Abhängigkeits-Schicht aus dem Cache.
+- Die im Workflow vorgesehene Prüfung der gepackten Anwendung, Domain-Konfiguration
+  und gesammelten Vereins-/Admin-Stylesheets läuft erfolgreich im Image.
+- GitHub-Workflows mit `actionlint` geprüft; Bash-Syntax, Ruff und
+  `git diff --check` bestanden.
+- Ein eigenes Compose-Testprojekt bestätigt PostgreSQL-/Redis-Bereitschaft,
+  Migrationen, Nginx 1.30.5, tatsächliche CSS-/Startseiten-Auslieferung und die
+  Bereitschaft von Celery Worker/Beat. Nach einem Containerwechsel bestehen
+  die HTTP-Prüfungen erneut.
+- Datenbank-/Medien-Backup und Restore im selben isolierten Testprojekt erfolgreich;
+  eine zuvor entfernte Testdatei wird aus dem Medien-Archiv wiederhergestellt.
+- Der Nginx-Konfigurationsmount nutzt jetzt `ro,Z`, damit auch ein Linux-Host
+  mit aktivem SELinux den Lesezugriff im Container erlaubt. Die Prüfung bestätigt
+  diesen Start auf dem lokalen Host.
+- cloudflared 2026.10.0 lässt sich herunterladen und seine Version ausführen.
+  Es wurde kein produktiver Tunnel gestartet.
+
+Die Gesamt-Testsuite wurde unter Python 3.14/Django 6.0 mit SQLite ausgeführt.
+PostgreSQL-Paralleltests und die auf dem Host nicht verfügbaren Nginx-Tests
+werden dort übersprungen; die tatsächlichen Containerprüfungen oben sind getrennt
+davon. ARM64-Build, Veröffentlichung bei GHCR und öffentliche Cloudflare-/SMTP-
+Verbindungen sind erst durch den echten Release-/Serverlauf bestätigt.
+
+## Frühere Cloudflare-502-Prüfung vom 03.10.2026
 
 Der aktuelle Ablauf wurde gezielt auf den Fall „Deployment erfolgreich,
 Tunnel Healthy, Website 502“ geprüft und korrigiert. Die Untersuchung umfasst
@@ -6,7 +55,7 @@ Quellcode, Compose-Konfiguration, Bash-Abläufe und lokale HTTP-Tests. Es besteh
 kein Zugang zur produktiven Cloudflare-Konfiguration oder zum Vereinsserver;
 die tatsächlich dort eingestellte Route und konkrete Ursache sind daher offen.
 
-## Aktuelles Ergebnis
+### Ergebnis am 03.10.2026
 
 Cloudflare bestätigt mit **Healthy** nur die Verbindung vom Connector zum
 Cloudflare-Netz. Das beweist nicht, dass Nginx oder Django erreichbar sind.
@@ -28,7 +77,7 @@ internen Ziel. Quelle:
 | Übrige Abhängigkeiten | Bestehende DB-/Redis-Healthchecks, Backup vor Migrationen, einmaliges `prepare`, Web-/Nginx-Prüfungen und Celery-Prüfungen bleiben Teil des Ablaufs. Nginx wird zusammen mit Web neu erstellt, damit eine frühere Web-Container-IP nicht übernommen wird. |
 | Anleitung | `DEPLOYMENT.md` erklärt die Komponenten, Domain-Werte, Dashboard-Felder, den Unterschied zwischen internem HTTP und öffentlichem HTTPS sowie eine Diagnosefolge mit erwarteten Ergebnissen. README, Admin-Handbuch, Bauplan und `.env.example` sind abgestimmt. |
 
-## Aktuell durchgeführte Validierung
+### Validierung am 03.10.2026
 
 - **72 gezielte Tests bestanden**, aus `tests/test_deployment.py`,
   `tests/test_deployment_operations.py` und `tests/test_tunnel_deployment.py`.
@@ -46,7 +95,7 @@ internen Ziel. Quelle:
   einschließlich Diagnoseprofil, gemeinsamem Tunnel-Netzwerk und fehlenden Hostports.
 - Ruff (`F821,F822,F823,E9`), Bash-Syntaxprüfung und `git diff --check` bestanden.
 
-## Noch auf dem tatsächlichen Docker-/Cloudflare-System zu prüfen
+### Damals noch auf dem tatsächlichen Docker-/Cloudflare-System zu prüfen
 
 1. Öffentliche Route **HTTP → `nginx:80`**, leeres Pfadfeld, Hostheader,
    Domain/DNS und zum Tunnel passender Token.

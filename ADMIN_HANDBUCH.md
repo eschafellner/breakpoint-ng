@@ -36,7 +36,7 @@ Dieses Handbuch richtet sich an den Vorstand, Kassier, Platzwart, Turnierleiter 
    - 8.2 Bildergalerie hinzufügen und Alt-Texte pflegen
    - 8.3 Zeitgesteuerte und mitglieder-exklusive Veröffentlichung
 9. [Betrieb, Updates und Datensicherung (DevOps / Verein)](#9-betrieb-updates-und-datensicherung-devops--verein)
-   - 9.1 Updates einspielen mit `bash update.sh`
+   - 9.1 Updates mit einer gewählten Release-Version einspielen
    - 9.2 Backups erstellen und wiederherstellen
    - 9.3 Cloudflare Tunnel & Sicherheit
 
@@ -257,16 +257,17 @@ eintragen; eine angegebene Wiederholungsregel wird ausdrücklich zurückgewiesen
 
 Die Plattform läuft vollautomatisch in Docker-Containern.
 
-### 9.1 Updates einspielen mit `bash update.sh`
+### 9.1 Updates mit einer gewählten Release-Version einspielen
 Wenn eine neue Version verfügbar ist, genügt ein einziger Befehl im Terminal des Servers:
 
 ```bash
-bash update.sh
+bash update.sh v0.1.1
 ```
 
 **Was dieses Skript automatisch erledigt:**
-1. Es lädt den neuesten Quellcode herunter.
-2. Es baut das neue Anwendungsimage und prüft die Konfiguration.
+
+1. Es lädt das fertige Image der gewählten Version herunter; `v0.1.1` ist ein Beispiel und muss bereits veröffentlicht sein.
+2. Es prüft die Konfiguration und speichert die Version in der vorhandenen `.env`.
 3. Es stoppt die Anwendungsdienste für ein Wartungsfenster.
 4. Es sichert Datenbank und Docker-Medien, führt Migrationen aus und sammelt versionierte CSS-/JavaScript-Dateien.
 5. Es startet Django und Nginx und prüft die tatsächliche HTTP-Auslieferung.
@@ -276,7 +277,11 @@ Während des Wartungsfensters ist die Webseite kurzzeitig nicht erreichbar.
 Vor einem Update müssen Datenbank und das Docker-Volume `media_prod_volume`
 gesichert werden. Eine Sicherung erstellt das Skript vor Migrationen selbst; beide
 Dateien anschließend außerhalb des Servers aufbewahren. Bei einem Fehler bricht das Skript ab; ein fehlgeschlagenes
-Update wird nicht als erfolgreich gemeldet. Details: [DEPLOYMENT.md](DEPLOYMENT.md).
+Update wird nicht als erfolgreich gemeldet. Kurze Anleitung: [UPDATES.md](UPDATES.md).
+Die Herstellung eines Release-Images erklärt [RELEASE_IMAGES.md](RELEASE_IMAGES.md)
+Schritt für Schritt. `bash update.sh` ohne Versionsnummer verwendet erneut das
+bereits ausgewählte Image. Der Server baut keine Anwendung und lädt keinen
+neuen Git-Code. Infrastruktur-Versionen werden separat und bewusst geändert.
 
 Der geprüfte Code-Stand benötigt drei neue Migrationen; der Update-Ablauf führt
 sie automatisch aus. Vorher bestehende E-Mail-Dubletten prüfen und den bisherigen

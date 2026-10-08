@@ -109,6 +109,7 @@ def test_production_beat_schedules_existing_tasks():
         DB_PASSWORD="test-password",
         CLOUDFLARE_TUNNEL_TOKEN="test-token",
         PUBLIC_SITE_URL="https://test.example",
+        APP_IMAGE="ghcr.io/test/breakpoint-ng:v1.0.0",
     )
     command = compose + [
         "--profile",
@@ -133,6 +134,8 @@ def test_production_beat_schedules_existing_tasks():
     assert not services["cloudflared"].get("ports")
     assert not services["nginx"].get("ports")
     for name in ["prepare", "web", "celery_worker", "celery_beat"]:
+        assert services[name]["image"] == environment["APP_IMAGE"]
+        assert "build" not in services[name]
         assert (
             services[name]["environment"]["DJANGO_SECRET_KEY_FALLBACKS"]
             == "test-previous-key"
@@ -160,6 +163,21 @@ def bash_binary():
 
 def run_script(tmp_path, script, arguments, **flags):
     root = Path(__file__).resolve().parents[1]
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    shutil.copytree(
+        root / "scripts",
+        workspace / "scripts",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    for filename in ("update.sh", "docker-compose.prod.yml"):
+        shutil.copy(root / filename, workspace / filename)
+    (workspace / ".env").write_text(
+        "# Test configuration\nAPP_IMAGE=ghcr.io/test/breakpoint-ng:v1.0.0\n"
+        "DB_PASSWORD=test-password\nDJANGO_SECRET_KEY=test-deploy-only-secret\n"
+        "DJANGO_ALLOWED_HOSTS=tennis.example\nCSRF_TRUSTED_ORIGINS=https://tennis.example\n"
+        "CLOUDFLARE_TUNNEL_TOKEN=test-token\nPUBLIC_SITE_URL=https://tennis.example\n"
+    )
     media = tmp_path / "fixture.tar.gz"
     source = tmp_path / "source/media"
     source.mkdir(parents=True)
@@ -169,7 +187,7 @@ def run_script(tmp_path, script, arguments, **flags):
     log = tmp_path / "commands.log"
     env = os.environ.copy()
     env.update(
-        BACKUP_DIR=os.path.relpath(tmp_path / "backups", root).replace("\\", "/"),
+        BACKUP_DIR=(tmp_path / "backups").as_posix(),
         DOCKER_TEST_LOG=log.as_posix(),
         MOCK_MEDIA_ARCHIVE=media.as_posix(),
         MOCK_DUMP_EXIT="0",
@@ -181,19 +199,30 @@ def run_script(tmp_path, script, arguments, **flags):
         MOCK_PUBLIC_EXIT="0",
         MOCK_CONFIG_EXIT="0",
         MOCK_ORIGIN_EXIT="0",
+        MOCK_IMAGE_PULL_EXIT="0",
+        MOCK_INFRA_PULL_EXIT="0",
+        MOCK_APP_IMAGE="ghcr.io/test/breakpoint-ng:v1.0.0",
+        MOCK_REAL_CONFIG="0",
     )
     env.update({name: str(value) for name, value in flags.items()})
     mock = r"""
 docker() {
     printf '%s\n' "$*" >> "$DOCKER_TEST_LOG"
+    if [ "$MOCK_REAL_CONFIG" = 1 ] && [[ "$*" == *"config --quiet" || "$*" == *"config prepare" ]]; then
+        command docker "$@"
+        return $?
+    fi
     case "$*" in
+        *"config prepare") printf 'services:\n  db:\n    image: postgres:16-alpine\n  prepare:\n    image: %s\n  redis:\n    image: redis:7-alpine\n' "${APP_IMAGE:-$MOCK_APP_IMAGE}" ;;
+        *"pull prepare") return "$MOCK_IMAGE_PULL_EXIT" ;;
+        *"pull nginx cloudflared"|*"pull --policy missing nginx cloudflared") return "$MOCK_INFRA_PULL_EXIT" ;;
         *"ps -a -q prepare") printf 'prepare-test-id\n' ;;
         "wait prepare-test-id") printf '0\n' ;;
         *"--wait --wait-timeout 120 celery_worker celery_beat") return "$MOCK_WORKER_EXIT" ;;
         *"python scripts/check_tunnel.py") return "$MOCK_TUNNEL_EXIT" ;;
         *"python scripts/check_deployment.py --public") return "$MOCK_PUBLIC_EXIT" ;;
         *"scripts/check_deployment.py --validate-config") return "$MOCK_CONFIG_EXIT" ;;
-        *"run --rm --no-deps -T tunnel_probe") return "$MOCK_ORIGIN_EXIT" ;;
+        *"run --rm --no-deps --pull never -T tunnel_probe") return "$MOCK_ORIGIN_EXIT" ;;
         *"ps --status running --services") printf '%s\n' "$MOCK_RUNNING" ;;
         *pg_dump*) printf 'SELECT 1;\n'; return "$MOCK_DUMP_EXIT" ;;
         *"media_archive.py backup") cat "$MOCK_MEDIA_ARCHIVE" ;;
@@ -205,6 +234,7 @@ docker() {
 }
 export -f docker
 git() {
+    printf 'git %s\n' "$*" >> "$DOCKER_TEST_LOG"
     case "$*" in
         "status --porcelain"|"pull --ff-only") return 0 ;;
         *) return 1 ;;
@@ -215,7 +245,7 @@ bash "$@"
 """
     result = subprocess.run(
         [bash_binary(), "-c", mock, "test", script, *arguments],
-        cwd=root,
+        cwd=workspace,
         env=env,
         capture_output=True,
     )
@@ -241,7 +271,7 @@ def test_backup_uses_volume_and_rejects_partial_results(
         assert result.returncode == 0, result.stderr.decode(errors="replace")
         assert len(files) == 2
         assert (
-            "--no-deps -T --entrypoint python web scripts/media_archive.py backup"
+            "--no-deps --pull never -T --entrypoint python web scripts/media_archive.py backup"
             in commands
         )
         assert '"$POSTGRES_USER"' in commands
@@ -313,7 +343,7 @@ def test_skipping_public_check_requires_explicit_option_and_reports_limit(
     )
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert "--validate-config" in commands
-    assert "run --rm --no-deps -T tunnel_probe" in commands
+    assert "run --rm --no-deps --pull never -T tunnel_probe" in commands
     assert "check_deployment.py --public" not in commands
     assert "öffentliche Website NICHT geprüft".encode() in result.stdout
     assert "Deployment erfolgreich geprüft".encode() not in result.stdout
@@ -334,3 +364,105 @@ def test_bad_deploy_arguments_fail_before_docker(tmp_path, arguments):
     result, commands = run_script(tmp_path, "scripts/deploy.sh", arguments)
     assert result.returncode == 2
     assert not commands
+
+
+def test_release_update_downloads_image_without_git_or_build(tmp_path):
+    result, commands = run_script(tmp_path, "update.sh", ["v0.1.1"])
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert "pull prepare" in commands
+    assert "git " not in commands
+    assert "build prepare" not in commands
+    assert "pull --policy missing nginx cloudflared" in commands
+    assert "pull nginx cloudflared" not in commands
+    assert "--force-recreate cloudflared" not in commands
+    for command in commands.splitlines():
+        if "up -d" in command:
+            assert "--no-build --pull never" in command
+    configuration = (tmp_path / "project/.env").read_text()
+    assert "APP_IMAGE=ghcr.io/eschafellner/breakpoint-ng:v0.1.1\n" in configuration
+    assert "DB_PASSWORD=test-password\n" in configuration
+    assert list((tmp_path / "project").glob(".env.release.*")) == []
+    assert commands.index("pull prepare") < commands.index("stop cloudflared")
+
+
+@pytest.mark.parametrize("failure", ["MOCK_IMAGE_PULL_EXIT", "MOCK_INFRA_PULL_EXIT"])
+def test_release_download_failure_keeps_running_site_and_selection(tmp_path, failure):
+    result, commands = run_script(tmp_path, "update.sh", ["v0.1.1"], **{failure: 1})
+    assert result.returncode != 0
+    assert "stop cloudflared" not in commands
+    assert "pg_dump" not in commands
+    assert (
+        "APP_IMAGE=ghcr.io/test/breakpoint-ng:v1.0.0\n"
+        in (tmp_path / "project/.env").read_text()
+    )
+
+
+def test_failed_deployment_keeps_target_for_retry_after_migrations(tmp_path):
+    result, _ = run_script(tmp_path, "update.sh", ["v0.1.1"], MOCK_PUBLIC_EXIT=1)
+    assert result.returncode != 0
+    assert (
+        "APP_IMAGE=ghcr.io/eschafellner/breakpoint-ng:v0.1.1\n"
+        in (tmp_path / "project/.env").read_text()
+    )
+    assert not (tmp_path / "project/.deployment-lock").exists()
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "ghcr.io/test/breakpoint-ng:v2.3.4-rc.1",
+        "ghcr.io/test/breakpoint-ng@sha256:" + "a" * 64,
+    ],
+)
+def test_custom_release_or_digest_is_persisted(tmp_path, image):
+    result, _ = run_script(tmp_path, "update.sh", [image])
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert f"APP_IMAGE={image}\n" in (tmp_path / "project/.env").read_text()
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "latest",
+        "ghcr.io/test/breakpoint-ng:latest",
+        "v1.0",
+        "ghcr.io/test/breakpoint-ng@sha256:abc",
+        "ghcr.io/test/breakpoint-ng:bad\nAPP_IMAGE=:v1.0.0",
+    ],
+)
+def test_invalid_release_selection_fails_before_docker(tmp_path, image):
+    result, commands = run_script(tmp_path, "update.sh", [image])
+    assert result.returncode == 2
+    assert not commands
+
+
+@pytest.mark.parametrize("image", ["ghcr.io/test/breakpoint-ng:latest", "v1.0.0"])
+def test_mutable_configured_image_fails_before_download_or_maintenance(tmp_path, image):
+    result, commands = run_script(tmp_path, "update.sh", [], APP_IMAGE=image)
+    assert result.returncode != 0
+    assert "pull " not in commands
+    assert "stop cloudflared" not in commands
+
+
+def test_infrastructure_downloads_require_explicit_option(tmp_path):
+    result, commands = run_script(tmp_path, "update.sh", ["--update-infrastructure"])
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert "pull nginx cloudflared" in commands
+    assert "pull --policy missing nginx cloudflared" not in commands
+    assert commands.index("pull nginx cloudflared") < commands.index("stop cloudflared")
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "ghcr.io/test/breakpoint-ng:v2.3.4",
+        "ghcr.io/test/breakpoint-ng@sha256:" + "a" * 64,
+    ],
+)
+def test_deployment_resolves_only_app_image_from_real_compose_config(tmp_path, image):
+    if not shutil.which("docker"):
+        pytest.skip("Docker Compose is required to parse the real deployment config")
+    result, _ = run_script(tmp_path, "update.sh", [image], MOCK_REAL_CONFIG=1)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert f"Lade Release-Image: {image}".encode() in result.stdout
+    assert b"test-deploy-only-secret" not in result.stdout + result.stderr
