@@ -221,8 +221,18 @@ def nginx_proxy(settings, tmp_path):
         "/app/staticfiles/", Path(settings.STATIC_ROOT).as_posix() + "/"
     )
     config = config.replace("/app/media/", Path(settings.MEDIA_ROOT).as_posix() + "/")
+    # Packaged Nginx uses absolute system paths (for example /run/nginx.pid),
+    # which -p does not override. Keep every runtime file under the test prefix.
     wrapper = (
-        "daemon off;\nworker_processes 1;\nevents { worker_connections 64; }\nhttp {\n"
+        "daemon off;\nworker_processes 1;\n"
+        "pid nginx.pid;\nerror_log logs/error.log;\n"
+        "events { worker_connections 64; }\nhttp {\n"
+        "access_log logs/access.log;\n"
+        "client_body_temp_path temp/client_body;\n"
+        "proxy_temp_path temp/proxy;\n"
+        "fastcgi_temp_path temp/fastcgi;\n"
+        "uwsgi_temp_path temp/uwsgi;\n"
+        "scgi_temp_path temp/scgi;\n"
         f'include "{mime_types.as_posix()}";\n{config}\n}}\n'
     )
     (prefix / "nginx.conf").write_text(wrapper, encoding="utf-8")
