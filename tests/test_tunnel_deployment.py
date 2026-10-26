@@ -8,8 +8,10 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from scripts.check_deployment import (
+    USER_AGENT,
     check_response,
     main,
+    make_request,
     public_site_url,
     wait_for_public,
 )
@@ -193,3 +195,11 @@ def test_public_wait_fails_when_origin_stays_unreachable(monkeypatch):
     monkeypatch.setattr("scripts.check_deployment.check_response", unreachable)
     with pytest.raises(RuntimeError, match="http://nginx:80"):
         wait_for_public("https://tennis.example", timeout=1)
+
+
+def test_requests_use_browser_compatible_user_agent():
+    request = make_request("https://tennis.example", "/healthz/", {"Host": "nginx"})
+
+    assert request.get_header("User-agent") == USER_AGENT
+    assert "Python-urllib" not in USER_AGENT
+    assert request.get_header("Host") == "nginx"

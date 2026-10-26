@@ -22,6 +22,10 @@ class NoRedirects(HTTPRedirectHandler):
 
 http = build_opener(NoRedirects())
 
+# Cloudflare's Browser Integrity Check blocks the default "Python-urllib"
+# signature (error 1010), which made the public check fail behind the tunnel.
+USER_AGENT = "Mozilla/5.0 (compatible; Breakpoint-Deployment-Check/1.0)"
+
 
 def public_site_url():
     """Validate the public origin before any maintenance or database changes."""
@@ -78,7 +82,12 @@ def make_request(base_url, path, headers=None):
     separator = "&" if "?" in path else "?"
     url = base_url.rstrip("/") + path + separator + "_deployment_check=" + uuid4().hex
     return Request(
-        url, headers={"Cache-Control": "no-cache, no-store", **(headers or {})}
+        url,
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "User-Agent": USER_AGENT,
+            **(headers or {}),
+        },
     )
 
 
