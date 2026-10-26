@@ -888,7 +888,8 @@ def test_partner_confirmation_and_withdrawal_endpoints(
     entry = register_for_competition(
         competition=competition, player1=member_user, player2=member_user2
     )
-    fee = Charge.objects.get(user=member_user)
+    # The fee is only billed once the partner confirms the starting place.
+    assert not Charge.objects.filter(user=member_user).exists()
     client.force_login(guest_user)
     assert (
         client.post(reverse("tournaments:confirm_partner", args=[entry.pk])).status_code
@@ -908,6 +909,8 @@ def test_partner_confirmation_and_withdrawal_endpoints(
     )
     entry.refresh_from_db()
     assert entry.status == Entry.Status.CONFIRMED
+    fee = Charge.objects.get(user=member_user)
+    assert fee.amount == 20
     response = client.get(
         reverse("tournaments:detail", args=[competition.tournament.slug])
     )
@@ -1087,7 +1090,7 @@ def test_partner_application_expires_after_deadline(
     assert expire_pending_partners() == 0
     entry.refresh_from_db()
     assert entry.status == Entry.Status.WITHDRAWN
-    assert Charge.objects.get(user=member_user).status == Charge.Status.CANCELLED
+    assert not Charge.objects.filter(user=member_user).exists()
 
 
 def test_invalid_audit_ip_and_mail_failure_are_handled(

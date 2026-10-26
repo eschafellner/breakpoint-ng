@@ -30,15 +30,15 @@ def calendar_view(request):
         try:
             current_day = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            current_day = timezone.now().date()
+            current_day = timezone.localdate()
     else:
-        current_day = timezone.now().date()
+        current_day = timezone.localdate()
 
     calendar_data = get_calendar_matrix(current_day, user=request.user)
     extras = BookingExtra.objects.filter(is_active=True).prefetch_related("courts")
 
     # Days for the date picker strip (today + next 7 days)
-    today = timezone.now().date()
+    today = timezone.localdate()
     days_strip = [
         {
             "date": today + timedelta(days=i),
@@ -165,7 +165,7 @@ def cancel_booking_view(request, booking_id):
             cancel_booking(booking=booking, user=request.user)
             messages.success(request, _("Deine Buchung wurde erfolgreich storniert."))
         except ValidationError as e:
-            messages.error(request, str(e))
+            messages.error(request, " ".join(e.messages))
         except Exception:
             logging.getLogger(__name__).exception("Stornierung für Buchung #%s fehlgeschlagen", booking.pk)
             messages.error(request, _("Die Stornierung konnte nicht gespeichert werden. Bitte versuche es erneut."))
@@ -225,7 +225,7 @@ def blockings_view(request):
             messages.success(request, msg)
             return redirect("courts:blockings")
         except ValidationError as e:
-            messages.error(request, str(e))
+            messages.error(request, " ".join(e.messages))
         except (ValueError, TypeError):
             messages.error(request, _("Bitte gib gültige Sperrzeiten an."))
         except Exception:

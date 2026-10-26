@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import F, Q
 from .models import Court, OpeningHours, Blocking, Booking
 
 
@@ -19,7 +19,8 @@ def get_opening_hours_for_court(court: Court, day: date) -> Optional[OpeningHour
             Q(season__isnull=True)
             | Q(season__start_date__lte=day, season__end_date__gte=day)
         )
-        .order_by("-season_id", "id")
+        # Seasonal hours override the default; NULLs must sort last on PostgreSQL too.
+        .order_by(F("season_id").desc(nulls_last=True), "id")
         .first()
     )
 

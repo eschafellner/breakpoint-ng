@@ -3,7 +3,7 @@ import io
 from datetime import date
 from typing import Optional, Dict, Any
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
 from django.utils import timezone
@@ -295,7 +295,11 @@ def import_members_from_csv(
             results["errors"].append(
                 {
                     "line": line_num,
-                    "error": str(e),
+                    "error": (
+                        " ".join(e.messages)
+                        if isinstance(e, ValidationError)
+                        else str(e)
+                    ),
                 }
             )
 

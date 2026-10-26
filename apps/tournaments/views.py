@@ -7,7 +7,6 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import is_tournament_director
-from apps.accounts.models import User
 from apps.core.view_utils import positive_pk
 from apps.courts.models import Court
 from django.utils import timezone

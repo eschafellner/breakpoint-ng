@@ -66,7 +66,11 @@ def validate_tennis_score(
         is_mtb = i == 2 and total_sets == 3 and is_final_set_tiebreak
 
         if not validate_tennis_set(a, b, is_match_tiebreak=is_mtb):
-            return False, _(f"Ungültiger Satzstand im {i+1}. Satz: {a}:{b}.")
+            return False, _("Ungültiger Satzstand im %(nr)d. Satz: %(a)s:%(b)s.") % {
+                "nr": i + 1,
+                "a": a,
+                "b": b,
+            }
 
         if a > b:
             sets_a += 1
@@ -77,6 +81,40 @@ def validate_tennis_score(
         return False, _("Ein Spieler muss mindestens 2 Gewinnsätze erzielen.")
 
     return True, None
+
+
+def competition_is_drawn(competition: Competition) -> bool:
+    """A drawn competition no longer accepts registrations or withdrawals."""
+    return competition.matches.exists()
+
+
+def charge_entry_fee(entry: Entry) -> Optional[Charge]:
+    """Bill the entry fee once the entry holds a confirmed starting place."""
+    from django.contrib.contenttypes.models import ContentType
+
+    already_charged = (
+        Charge.objects.filter(
+            content_type=ContentType.objects.get_for_model(Entry),
+            object_id=entry.pk,
+        )
+        .exclude(status=Charge.Status.CANCELLED)
+        .exists()
+    )
+    if already_charged:
+        return None
+    competition = entry.competition
+    tournament = competition.tournament
+    fee = tournament.fee_member if is_member(entry.player1) else tournament.fee_guest
+    if fee <= Decimal("0.00"):
+        return None
+    return create_charge(
+        user=entry.player1,
+        kind=Charge.Kind.TOURNAMENT_FEE,
+        amount=fee,
+        due_date=tournament.start_date,
+        description=f"Startgebühr {tournament.name} ({competition.name})",
+        source=entry,
+    )
 
 
 @transaction.atomic
@@ -90,7 +128,7 @@ def register_for_competition(
     competition = Competition.objects.select_for_update().get(pk=competition.pk)
     tournament = Tournament.objects.get(pk=competition.tournament_id)
     now = timezone.now()
-    if tournament.status != Tournament.Status.OPEN:
+    if tournament.status != Tournament.Status.OPEN or competition_is_drawn(competition):
         raise ValidationError(_("Die Anmeldung für dieses Turnier ist geschlossen."))
     if (
         not player1.is_active
@@ -161,18 +199,8 @@ def register_for_competition(
     )
 
     # 6. Central Billing Charge Creation (AP-08: Startgebühr)
-    is_p1_member = is_member(player1)
-    fee = tournament.fee_member if is_p1_member else tournament.fee_guest
-
-    if fee > Decimal("0.00"):
-        create_charge(
-            user=player1,
-            kind=Charge.Kind.TOURNAMENT_FEE,
-            amount=fee,
-            due_date=tournament.start_date,
-            description=f"Startgebühr {tournament.name} ({competition.name})",
-            source=entry,
-        )
+    if entry.status == Entry.Status.CONFIRMED:
+        charge_entry_fee(entry)
 
     log_audit(
         user=player1,
@@ -210,6 +238,7 @@ def confirm_partner_entry(entry: Entry, partner: User) -> Entry:
     if (
         tournament.status != Tournament.Status.OPEN
         or timezone.now() > tournament.registration_deadline
+        or competition_is_drawn(entry.competition)
     ):
         raise ValidationError(_("Die Anmeldung für dieses Turnier ist geschlossen."))
 
@@ -223,6 +252,8 @@ def confirm_partner_entry(entry: Entry, partner: User) -> Entry:
     else:
         entry.status = Entry.Status.CONFIRMED
     entry.save(update_fields=["status"])
+    if entry.status == Entry.Status.CONFIRMED:
+        charge_entry_fee(entry)
     log_audit(user=partner, action="CONFIRM_TOURNAMENT_PARTNER", entity_type="Entry",
               entity_id=entry.pk, changes={"status": entry.status})
     return entry
@@ -234,7 +265,10 @@ def withdraw_entry(entry: Entry, actor: Optional[User] = None) -> None:
     Competition.objects.select_for_update().get(pk=entry.competition_id)
     current = Entry.objects.select_for_update().get(pk=entry.pk)
     entry.status = current.status
-    if entry.competition.tournament.status != Tournament.Status.OPEN:
+    if (
+        entry.competition.tournament.status != Tournament.Status.OPEN
+        or competition_is_drawn(entry.competition)
+    ):
         raise ValidationError(
             _("Abmeldungen sind nur während der Anmeldephase möglich.")
         )
@@ -268,6 +302,7 @@ def withdraw_entry(entry: Entry, actor: Optional[User] = None) -> None:
         if next_waitlist:
             next_waitlist.status = Entry.Status.CONFIRMED
             next_waitlist.save(update_fields=["status"])
+            charge_entry_fee(next_waitlist)
     log_audit(user=actor, action="WITHDRAW_TOURNAMENT_ENTRY", entity_type="Entry",
               entity_id=entry.pk, changes={"previous_status": prev_status})
 
@@ -312,6 +347,13 @@ def draw_competition(*, competition, actor, review_token):
     log_audit(user=actor, action="DRAW_COMPETITION", entity_type="Competition",
               entity_id=competition.pk, changes={"format": competition.format, "matches": len(matches)})
     return matches
+
+
+def mark_tournament_drawn_if_complete(tournament: Tournament) -> None:
+    """Close the whole tournament only after its last competition was drawn."""
+    if not tournament.competitions.filter(matches__isnull=True).exists():
+        tournament.status = Tournament.Status.DRAWN
+        tournament.save(update_fields=["status"])
 
 
 @transaction.atomic
@@ -460,8 +502,7 @@ def generate_knockout_draw(competition: Competition) -> List[Match]:
 
         match.save()
 
-    competition.tournament.status = Tournament.Status.DRAWN
-    competition.tournament.save(update_fields=["status"])
+    mark_tournament_drawn_if_complete(competition.tournament)
 
     all_matches = list(competition.matches.all())
     return all_matches
@@ -514,8 +555,7 @@ def generate_round_robin_draw(competition: Competition) -> List[Match]:
             created_matches.append(m)
             pos += 1
 
-    competition.tournament.status = Tournament.Status.DRAWN
-    competition.tournament.save(update_fields=["status"])
+    mark_tournament_drawn_if_complete(competition.tournament)
 
     return created_matches
 
@@ -748,7 +788,7 @@ def calculate_round_robin_standings(competition: Competition) -> List[Dict[str, 
                 stats[m.entry_b_id]["won"] += 1
                 stats[m.entry_a_id]["lost"] += 1
 
-            for s in m.score:
+            for index, s in enumerate(m.score):
                 if (
                     isinstance(s, dict)
                     and type(s.get("a")) is int
@@ -756,13 +796,16 @@ def calculate_round_robin_standings(competition: Competition) -> List[Dict[str, 
                 ):
                     ga = s["a"]
                     gb = s["b"]
-                    stats[m.entry_a_id]["games_won"] += ga
-                    stats[m.entry_a_id]["games_lost"] += gb
-                    stats[m.entry_b_id]["games_won"] += gb
-                    stats[m.entry_b_id]["games_lost"] += ga
+                    is_mtb = index == 2 and len(m.score) == 3
+                    # Match-tiebreak points count as one set, not as games.
+                    if not is_mtb:
+                        stats[m.entry_a_id]["games_won"] += ga
+                        stats[m.entry_a_id]["games_lost"] += gb
+                        stats[m.entry_b_id]["games_won"] += gb
+                        stats[m.entry_b_id]["games_lost"] += ga
 
                     is_complete_set = validate_tennis_set(
-                        ga, gb, is_match_tiebreak=s is m.score[-1] and len(m.score) == 3
+                        ga, gb, is_match_tiebreak=is_mtb
                     )
                     if ga > gb and is_complete_set:
                         stats[m.entry_a_id]["sets_won"] += 1

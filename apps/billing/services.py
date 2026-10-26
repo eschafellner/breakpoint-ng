@@ -164,6 +164,22 @@ def cancel_charge(charge: Charge, reason: str = "") -> None:
     )
 
 
+def membership_fee_exists(membership, period_start: date, period_end: date) -> bool:
+    """Idempotency per membership and billing period.
+
+    Yearly and monthly periods are kept apart, so switching the billing interval
+    within a year does not suppress the new membership's fees.
+    """
+    membership_type = ContentType.objects.get_for_model(membership)
+    return Charge.objects.filter(
+        models.Q(content_type=membership_type, object_id=membership.pk)
+        | models.Q(user_id=membership.user_id),
+        kind=Charge.Kind.MEMBERSHIP_FEE,
+        period_start=period_start,
+        period_end=period_end,
+    ).exists()
+
+
 @transaction.atomic
 def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[Charge]:
     """
@@ -210,13 +226,7 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
         )
 
         for mem in yearly_memberships:
-            # Idempotency check: does a charge for this user & year already exist?
-            already_charged = Charge.objects.filter(
-                user=mem.user,
-                kind=Charge.Kind.MEMBERSHIP_FEE,
-                period_start__year=year,
-            ).exists()
-            if already_charged:
+            if membership_fee_exists(mem, period_start, period_end):
                 continue
 
             fee = mem.type.fee_amount
@@ -270,12 +280,7 @@ def generate_membership_fees(*, year: int, month: Optional[int] = None) -> List[
             if mem.end_date and mem.end_date < m_start:
                 continue
 
-            already_charged = Charge.objects.filter(
-                user=mem.user,
-                kind=Charge.Kind.MEMBERSHIP_FEE,
-                period_start=m_start,
-            ).exists()
-            if already_charged:
+            if membership_fee_exists(mem, m_start, m_end):
                 continue
 
             fee = mem.type.fee_amount

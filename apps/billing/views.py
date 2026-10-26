@@ -74,7 +74,9 @@ def record_payment_view(request, charge_id):
                     "status": charge.get_status_display(),
                 },
             )
-        except (ValidationError, ValueError) as e:
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+        except ValueError as e:
             messages.error(request, str(e))
         except InvalidOperation:
             messages.error(request, _("Bitte gib einen gültigen Zahlungsbetrag an."))
